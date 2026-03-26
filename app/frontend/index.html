@@ -1,0 +1,1041 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XiaoZhi Playground</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --surface: rgba(255, 252, 247, 0.9);
+      --surface-strong: #fffaf2;
+      --ink: #1f2937;
+      --muted: #64707d;
+      --line: rgba(93, 74, 40, 0.13);
+      --accent: #d96d43;
+      --accent-deep: #bc5135;
+      --user-bubble: #fff1db;
+      --assistant-bubble: #ffffff;
+      --ok: #2c8d66;
+      --shadow: 0 18px 50px rgba(84, 58, 18, 0.12);
+      --radius-xl: 26px;
+      --radius-lg: 20px;
+      --radius-md: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(241, 188, 82, 0.25), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(217, 109, 67, 0.17), transparent 20%),
+        linear-gradient(180deg, #faf5ec 0%, #f2ebdf 100%);
+    }
+
+    .page {
+      width: min(1320px, calc(100vw - 24px));
+      margin: 12px auto;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 16px;
+      height: calc(100vh - 24px);
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius-xl);
+    }
+
+    .sidebar {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 12px;
+      padding: 14px;
+      min-height: 0;
+      overflow: auto;
+      align-content: start;
+    }
+
+    .brand {
+      padding: 14px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(255,248,239,0.94));
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-image {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid rgba(93, 74, 40, 0.12);
+      padding: 4px;
+      flex: 0 0 auto;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+
+    .brand p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 13px;
+    }
+
+    .mini-links {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .mini-links a {
+      text-decoration: none;
+      color: var(--ink);
+      padding: 8px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.78);
+      font-size: 12px;
+    }
+
+    .config {
+      padding: 14px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.66);
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .config h2 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: -0.02em;
+    }
+
+    .config p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      font: inherit;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid rgba(88, 68, 33, 0.14);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.92);
+      color: var(--ink);
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: rgba(217, 109, 67, 0.58);
+      box-shadow: 0 0 0 4px rgba(217, 109, 67, 0.08);
+    }
+
+    .upload-wrap {
+      display: grid;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 16px;
+      border: 1px dashed rgba(88, 68, 33, 0.2);
+      background: rgba(255,255,255,0.64);
+    }
+
+    .preview {
+      min-height: 110px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 14px;
+      background: rgba(247, 242, 233, 0.92);
+      border: 1px solid rgba(88, 68, 33, 0.08);
+    }
+
+    .preview img {
+      width: 100%;
+      max-height: 180px;
+      object-fit: contain;
+      display: block;
+      background: white;
+    }
+
+    .preview span {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 14px;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    .inline-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chat {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      overflow: hidden;
+      height: calc(100vh - 24px);
+      position: relative;
+    }
+
+    .chat-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 20px 10px;
+      border-bottom: 1px solid rgba(88, 68, 33, 0.08);
+      background: linear-gradient(180deg, rgba(255,255,255,0.7), rgba(255,251,245,0.82));
+    }
+
+    .chat-topbar strong {
+      display: block;
+      font-size: 14px;
+    }
+
+    .chat-topbar span {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .wait-timer {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+      color: var(--muted);
+      opacity: 0.9;
+    }
+
+    .chat-scroll {
+      padding: 16px;
+      overflow: auto;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .chat-shell {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .empty-state {
+      align-self: center;
+      justify-self: center;
+      width: min(720px, calc(100% - 48px));
+      padding: 24px 20px 8px;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .empty-state[hidden] {
+      display: none;
+    }
+
+    .empty-state h2 {
+      margin: 0;
+      font-size: clamp(34px, 5vw, 52px);
+      line-height: 1.12;
+      letter-spacing: -0.04em;
+      font-weight: 700;
+      color: #1d2430;
+    }
+
+    .empty-state p {
+      margin: 14px auto 0;
+      max-width: 520px;
+      font-size: 16px;
+      line-height: 1.6;
+      color: #6f7784;
+    }
+
+    .message-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .message-row.user {
+      justify-content: flex-end;
+    }
+
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 11px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      font-size: 11px;
+      font-weight: 800;
+      color: white;
+      background: linear-gradient(135deg, var(--accent), #efb752);
+      overflow: hidden;
+      border: 1px solid rgba(88, 68, 33, 0.18);
+    }
+
+    .avatar.assistant {
+      background: white;
+    }
+
+    .avatar.user {
+      background: linear-gradient(135deg, #49515d, #697383);
+    }
+
+    .avatar-logo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: white;
+      padding: 2px;
+    }
+
+    .bubble-wrap {
+      max-width: min(780px, 90%);
+      display: grid;
+      gap: 6px;
+    }
+
+    .bubble-label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .message-row.user .bubble-label {
+      text-align: right;
+    }
+
+    .bubble {
+      border-radius: 18px;
+      padding: 13px 15px;
+      line-height: 1.55;
+      border: 1px solid rgba(88, 68, 33, 0.08);
+      box-shadow: 0 8px 20px rgba(69, 49, 13, 0.06);
+      white-space: pre-wrap;
+    }
+
+    .bubble.user {
+      background: var(--user-bubble);
+    }
+
+    .bubble.assistant {
+      background: var(--assistant-bubble);
+    }
+
+    .followup {
+      margin-top: 10px;
+      padding: 10px 11px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(241, 188, 82, 0.16), rgba(217, 109, 67, 0.08));
+      border: 1px solid rgba(217, 109, 67, 0.1);
+      font-size: 13px;
+    }
+
+    .composer {
+      padding: 16px 18px 18px;
+      border-top: 1px solid rgba(88, 68, 33, 0.06);
+      background: linear-gradient(180deg, rgba(255,251,245,0.76), rgba(255,255,255,0.94));
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .composer textarea {
+      min-height: 72px;
+      max-height: 180px;
+      resize: vertical;
+      background: rgba(255, 255, 255, 0.96);
+      border-radius: 22px;
+      padding: 18px 20px;
+      font-size: 16px;
+      line-height: 1.55;
+      box-shadow: 0 12px 30px rgba(84, 58, 18, 0.06);
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      border-radius: 999px;
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .send-btn {
+      min-width: 146px;
+      padding: 14px 18px;
+      color: white;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+      box-shadow: 0 12px 24px rgba(217, 109, 67, 0.2);
+    }
+
+    .subtle-btn {
+      padding: 9px 12px;
+      background: rgba(255,255,255,0.88);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    @media (max-width: 1100px) {
+      .page {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      .chat {
+        height: auto;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .composer {
+        grid-template-columns: 1fr;
+      }
+
+      .empty-state {
+        width: min(100%, calc(100% - 28px));
+        padding-top: 12px;
+      }
+
+      .empty-state h2 {
+        font-size: 30px;
+      }
+
+      .empty-state p {
+        font-size: 14px;
+      }
+
+      .bubble-wrap {
+        max-width: 100%;
+      }
+
+      .chat-scroll,
+      .chat-shell,
+      .chat-topbar,
+      .composer,
+      .sidebar {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <aside class="card sidebar">
+      <section class="brand">
+        <div class="brand-row">
+          <img class="logo-image" src="/logo.png" alt="XiaoZhi logo" />
+          <div>
+            <h1>XiaoZhi Playground</h1>
+            <p>Set input options on the left, keep the chat simple on the right.</p>
+          </div>
+        </div>
+        <div class="mini-links">
+          <a href="/docs" target="_blank" rel="noreferrer">API Docs</a>
+          <a href="/health" target="_blank" rel="noreferrer">Health</a>
+        </div>
+      </section>
+
+      <section class="config">
+        <h2>Input Settings</h2>
+        <p>Configure template, age, session, and optional image.</p>
+
+        <div class="field">
+          <label for="template-select">Template</label>
+          <select id="template-select">
+            <option value="">Choose a template</option>
+            <option value="text-only">Text Only: apple learning</option>
+            <option value="text-plus-image">Text + Image: picture understanding</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="age-hint">Age Hint</label>
+          <select id="age-hint">
+            <option value="3-5">3-5</option>
+            <option value="3-8" selected>3-8</option>
+            <option value="4-6">4-6</option>
+            <option value="6-8">6-8</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="session-id">Session ID</label>
+          <input id="session-id" type="text" placeholder="optional-session-1" />
+        </div>
+
+        <div class="field">
+          <label for="image-url">Image URL</label>
+          <input id="image-url" type="url" placeholder="https://example.com/cat.jpg" />
+        </div>
+
+        <div class="upload-wrap">
+          <div class="field">
+            <label for="image-file">Upload Image File</label>
+            <input id="image-file" type="file" accept="image/png,image/jpeg,image/webp" />
+          </div>
+          <div class="inline-actions">
+            <button id="clear-image" class="subtle-btn" type="button">Clear Image</button>
+            <button id="sample-text-btn" class="subtle-btn" type="button">Text Sample</button>
+            <button id="sample-image-btn" class="subtle-btn" type="button">Image Sample</button>
+          </div>
+          <div class="preview" id="preview">
+            <span>No image selected yet.</span>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="card chat">
+      <header class="chat-topbar">
+        <div>
+          <strong id="status-title">准备就绪</strong>
+          <span id="status-text">输入问题后按回车发送。</span>
+          <span id="wait-timer" class="wait-timer" hidden></span>
+        </div>
+        <button id="new-chat-btn" class="subtle-btn" type="button">新对话</button>
+      </header>
+
+      <section class="chat-shell">
+        <div class="empty-state" id="empty-state">
+          <h2>你想学什么？</h2>
+          <p>可以直接提问，也可以上传图片让我一起看看。</p>
+        </div>
+        <section class="chat-scroll" id="chat-scroll"></section>
+      </section>
+
+      <footer class="composer">
+        <textarea id="text-input" placeholder="输入你想问的问题，或描述这张图片。"></textarea>
+        <button id="send-btn" class="send-btn" type="button">发送</button>
+      </footer>
+    </section>
+  </main>
+
+  <script>
+    const endpoint = "/api/v1/chat/explain-and-ask";
+    const sessionStorageKey = "xiaozhi.playground.session_id";
+
+    const elements = {
+      text: document.getElementById("text-input"),
+      ageHint: document.getElementById("age-hint"),
+      templateSelect: document.getElementById("template-select"),
+      sessionId: document.getElementById("session-id"),
+      imageUrl: document.getElementById("image-url"),
+      imageFile: document.getElementById("image-file"),
+      clearImage: document.getElementById("clear-image"),
+      sendBtn: document.getElementById("send-btn"),
+      newChatBtn: document.getElementById("new-chat-btn"),
+      sampleTextBtn: document.getElementById("sample-text-btn"),
+      sampleImageBtn: document.getElementById("sample-image-btn"),
+      preview: document.getElementById("preview"),
+      statusTitle: document.getElementById("status-title"),
+      statusText: document.getElementById("status-text"),
+      waitTimer: document.getElementById("wait-timer"),
+      chatScroll: document.getElementById("chat-scroll"),
+      emptyState: document.getElementById("empty-state"),
+    };
+
+    const initialChatMarkup = elements.chatScroll.innerHTML;
+
+    let uploadedImage = {
+      base64: null,
+      mimeType: null,
+      previewUrl: null,
+      fileName: null,
+    };
+    let isSubmitting = false;
+    let waitTimerHandle = null;
+    let waitSeconds = 0;
+    const MAX_INPUT_FILE_BYTES = 8 * 1024 * 1024;
+    const MAX_UPLOAD_IMAGE_BYTES = 4 * 1024 * 1024;
+    const MAX_UPLOAD_IMAGE_BASE64_LENGTH = Math.ceil((MAX_UPLOAD_IMAGE_BYTES * 4) / 3);
+    const COMPRESS_MAX_SIDE = 1024;
+    const COMPRESS_QUALITY = 0.75;
+
+    function setStatus(title, text) {
+      elements.statusTitle.textContent = title;
+      elements.statusText.textContent = text;
+    }
+
+    function syncEmptyState() {
+      elements.emptyState.hidden = elements.chatScroll.children.length > 0;
+    }
+
+    function startWaitTimer() {
+      stopWaitTimer();
+      waitSeconds = 0;
+      elements.waitTimer.hidden = false;
+      elements.waitTimer.textContent = "等待 0 秒";
+      waitTimerHandle = window.setInterval(() => {
+        waitSeconds += 1;
+        elements.waitTimer.textContent = `等待 ${waitSeconds} 秒`;
+      }, 1000);
+    }
+
+    function stopWaitTimer() {
+      if (waitTimerHandle) {
+        window.clearInterval(waitTimerHandle);
+        waitTimerHandle = null;
+      }
+      elements.waitTimer.hidden = true;
+      elements.waitTimer.textContent = "";
+    }
+
+    function createAssistantAvatar() {
+      const avatar = document.createElement("div");
+      avatar.className = "avatar assistant";
+      const logo = document.createElement("img");
+      logo.className = "avatar-logo";
+      logo.src = "/logo.png";
+      logo.alt = "XiaoZhi avatar";
+      avatar.appendChild(logo);
+      return avatar;
+    }
+
+    function generateSessionId() {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID();
+      }
+      return `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function persistSessionId(sessionId) {
+      elements.sessionId.value = sessionId;
+      window.localStorage.setItem(sessionStorageKey, sessionId);
+      return sessionId;
+    }
+
+    function ensureSessionId(forceNew = false) {
+      const currentValue = elements.sessionId.value.trim();
+      const storedValue = window.localStorage.getItem(sessionStorageKey) || "";
+      const sessionId = forceNew ? generateSessionId() : (currentValue || storedValue || generateSessionId());
+      return persistSessionId(sessionId);
+    }
+
+    function renderPreview() {
+      if (uploadedImage.previewUrl) {
+        elements.preview.innerHTML = `<img src="${uploadedImage.previewUrl}" alt="preview" />`;
+        return;
+      }
+
+      const imageUrl = elements.imageUrl.value.trim();
+      if (imageUrl) {
+        elements.preview.innerHTML = `<img src="${imageUrl}" alt="preview from url" />`;
+        return;
+      }
+
+      elements.preview.innerHTML = "<span>No image selected yet.</span>";
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve(String(reader.result || ""));
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function loadImage(dataUrl) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = dataUrl;
+      });
+    }
+
+    async function compressImageFile(file) {
+      if (file.size > MAX_INPUT_FILE_BYTES) {
+        throw new Error("The selected file is too large. Please choose an image smaller than 8MB.");
+      }
+
+      const dataUrl = await readFileAsDataUrl(file);
+      const image = await loadImage(dataUrl);
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      const longest = Math.max(width, height);
+      const ratio = longest > COMPRESS_MAX_SIDE ? COMPRESS_MAX_SIDE / longest : 1;
+      const targetWidth = Math.max(1, Math.round(width * ratio));
+      const targetHeight = Math.max(1, Math.round(height * ratio));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("Image compression is not available in this browser.");
+      }
+      context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+      const compressedDataUrl = canvas.toDataURL("image/jpeg", COMPRESS_QUALITY);
+      const commaIndex = compressedDataUrl.indexOf(",");
+      const base64Payload = commaIndex >= 0 ? compressedDataUrl.slice(commaIndex + 1) : compressedDataUrl;
+      if (base64Payload.length > MAX_UPLOAD_IMAGE_BASE64_LENGTH) {
+        throw new Error("Compressed image is still too large. Please choose a smaller image or use Image URL.");
+      }
+
+      return {
+        base64: base64Payload,
+        mimeType: "image/jpeg",
+      };
+    }
+
+    function buildPayload() {
+      const sessionId = ensureSessionId();
+      const payload = {
+        text: elements.text.value.trim() || undefined,
+        age_hint: elements.ageHint.value,
+        session_id: sessionId,
+      };
+
+      if (uploadedImage.base64) {
+        payload.image_base64 = uploadedImage.base64;
+        payload.image_mime_type = uploadedImage.mimeType;
+      } else if (elements.imageUrl.value.trim()) {
+        payload.image_url = elements.imageUrl.value.trim();
+      }
+
+      return payload;
+    }
+
+    function resetConversationView() {
+      elements.chatScroll.innerHTML = initialChatMarkup;
+      elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
+      syncEmptyState();
+    }
+
+    function appendChatRow(row) {
+      elements.chatScroll.appendChild(row);
+      elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
+      syncEmptyState();
+    }
+
+    function appendUserMessage(payload) {
+      const parts = [];
+      if (payload.text) {
+        parts.push(payload.text);
+      }
+      if (payload.image_url) {
+        parts.push("Image URL attached.");
+      }
+      if (payload.image_base64) {
+        parts.push(`Uploaded image: ${uploadedImage.fileName || "attached image"}`);
+      }
+      if (!parts.length) {
+        parts.push("(empty input)");
+      }
+
+      const row = document.createElement("div");
+      row.className = "message-row user";
+
+      const bubbleWrap = document.createElement("div");
+      bubbleWrap.className = "bubble-wrap";
+
+      const label = document.createElement("div");
+      label.className = "bubble-label";
+      label.textContent = "You";
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble user";
+      bubble.textContent = parts.join("\n\n");
+
+      const avatar = document.createElement("div");
+      avatar.className = "avatar user";
+      avatar.textContent = "You";
+
+      bubbleWrap.appendChild(label);
+      bubbleWrap.appendChild(bubble);
+      row.appendChild(bubbleWrap);
+      row.appendChild(avatar);
+      appendChatRow(row);
+    }
+
+    function appendAssistantMessage(data) {
+      const row = document.createElement("div");
+      row.className = "message-row";
+
+      const avatar = createAssistantAvatar();
+
+      const bubbleWrap = document.createElement("div");
+      bubbleWrap.className = "bubble-wrap";
+
+      const label = document.createElement("div");
+      label.className = "bubble-label";
+      label.textContent = "XiaoZhi";
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble assistant";
+      bubble.textContent = data.message || "No message returned.";
+
+      if (data.follow_up_question) {
+        const followup = document.createElement("div");
+        followup.className = "followup";
+        followup.textContent = `Question: ${data.follow_up_question}`;
+        bubble.appendChild(followup);
+      }
+
+      bubbleWrap.appendChild(label);
+      bubbleWrap.appendChild(bubble);
+      row.appendChild(avatar);
+      row.appendChild(bubbleWrap);
+      appendChatRow(row);
+    }
+
+    function clearImageSelection(silent = false) {
+      if (uploadedImage.previewUrl) {
+        URL.revokeObjectURL(uploadedImage.previewUrl);
+      }
+      uploadedImage = { base64: null, mimeType: null, previewUrl: null, fileName: null };
+      elements.imageFile.value = "";
+      elements.imageUrl.value = "";
+      renderPreview();
+      if (!silent) {
+        setStatus("Ready", "Image removed.");
+      }
+    }
+
+    function clearComposerAfterSuccess() {
+      clearImageSelection(true);
+    }
+
+    function applyTemplate(templateName) {
+      if (!templateName) {
+        return;
+      }
+
+      clearImageSelection(true);
+
+      if (templateName === "text-only") {
+        elements.text.value = "Tell me about an apple in a simple way.";
+        elements.ageHint.value = "4-6";
+        renderPreview();
+        setStatus("Ready", "Text template loaded.");
+        return;
+      }
+
+      if (templateName === "text-plus-image") {
+        elements.text.value = "What is in this picture? Please explain it simply.";
+        elements.ageHint.value = "3-8";
+        elements.imageUrl.value = "https://ts1.tc.mm.bing.net/th/id/OIP-C.z3qX0zn2LVe8g6vgxVRWrQAAAA?w=193&h=135&c=8&rs=1&qlt=90&o=6&pid=3.1&rm=2";
+        renderPreview();
+        setStatus("Ready", "Text + image template loaded.");
+      }
+    }
+
+    async function submitRequest() {
+      if (isSubmitting) {
+        return;
+      }
+
+      const payload = buildPayload();
+      appendUserMessage(payload);
+      elements.text.value = "";
+      isSubmitting = true;
+      elements.sendBtn.disabled = true;
+      setStatus("思考中", "正在等待模型回复。");
+      startWaitTimer();
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        let data = null;
+        let rawBody = "";
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          data = await response.json();
+        } else {
+          rawBody = await response.text();
+        }
+
+        if (!response.ok) {
+          const detail = (data && data.detail)
+            ? String(data.detail)
+            : (rawBody || `HTTP ${response.status} ${response.statusText}`);
+          appendAssistantMessage({
+            message: `API error (${response.status}): ${detail}`,
+            follow_up_question: null,
+          });
+          setStatus("请求失败", detail);
+          return;
+        }
+
+        appendAssistantMessage(data || {});
+        clearComposerAfterSuccess();
+        setStatus("准备就绪", "可以继续输入下一条问题。");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendAssistantMessage({
+          message: `Network error: ${message}`,
+          follow_up_question: null,
+        });
+        setStatus("网络错误", message);
+      } finally {
+        stopWaitTimer();
+        isSubmitting = false;
+        elements.sendBtn.disabled = false;
+      }
+    }
+
+    elements.imageFile.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
+      try {
+        const compressed = await compressImageFile(file);
+        if (uploadedImage.previewUrl) {
+          URL.revokeObjectURL(uploadedImage.previewUrl);
+        }
+        uploadedImage.base64 = compressed.base64;
+        uploadedImage.mimeType = compressed.mimeType;
+        uploadedImage.fileName = `${file.name} (compressed)`;
+        uploadedImage.previewUrl = URL.createObjectURL(file);
+        renderPreview();
+        setStatus("Ready", `Image loaded: ${file.name}`);
+      } catch (error) {
+        clearImageSelection(true);
+        elements.imageFile.value = "";
+        const message = error instanceof Error ? error.message : "Failed to process this image.";
+        setStatus("Error", message);
+      }
+    });
+
+    elements.imageUrl.addEventListener("input", () => {
+      if (!uploadedImage.base64) {
+        renderPreview();
+      }
+    });
+
+    elements.clearImage.addEventListener("click", () => {
+      clearImageSelection();
+    });
+
+    elements.sampleTextBtn.addEventListener("click", () => {
+      elements.templateSelect.value = "text-only";
+      applyTemplate("text-only");
+    });
+
+    elements.sampleImageBtn.addEventListener("click", () => {
+      elements.templateSelect.value = "text-plus-image";
+      applyTemplate("text-plus-image");
+    });
+
+    elements.templateSelect.addEventListener("change", (event) => {
+      applyTemplate(event.target.value);
+    });
+
+    elements.sessionId.addEventListener("input", () => {
+      const value = elements.sessionId.value.trim();
+      if (value) {
+        window.localStorage.setItem(sessionStorageKey, value);
+      }
+    });
+
+    elements.sessionId.addEventListener("blur", () => {
+      ensureSessionId();
+    });
+
+    elements.newChatBtn.addEventListener("click", () => {
+      ensureSessionId(true);
+      elements.text.value = "";
+      clearImageSelection(true);
+      resetConversationView();
+      setStatus("准备就绪", "新对话已开始。");
+    });
+
+    elements.sendBtn.addEventListener("click", submitRequest);
+
+    elements.text.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        submitRequest();
+      }
+    });
+
+    ensureSessionId();
+    renderPreview();
+    syncEmptyState();
+  </script>
+</body>
+</html>

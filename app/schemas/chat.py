@@ -1,7 +1,12 @@
 import base64
+import os
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+
+
+def _max_upload_image_bytes() -> int:
+    return int(os.getenv("MAX_UPLOAD_IMAGE_BYTES", str(4 * 1024 * 1024)))
 
 
 class ChatRequest(BaseModel):
@@ -45,11 +50,15 @@ class ChatRequest(BaseModel):
             raise ValueError("image_mime_type is required when image_base64 is provided.")
         if has_base64_image:
             try:
-                base64.b64decode(self.image_base64 or "", validate=True)
+                decoded_image = base64.b64decode(self.image_base64 or "", validate=True)
             except Exception as exc:
                 raise ValueError(
                     "image_base64 must be valid base64 data, not a placeholder string."
                 ) from exc
+            if len(decoded_image) > _max_upload_image_bytes():
+                raise ValueError(
+                    "image_base64 payload is too large. Please upload a smaller image or use image_url."
+                )
             if self.image_mime_type not in {"image/png", "image/jpeg", "image/webp"}:
                 raise ValueError(
                     "image_mime_type must be one of image/png, image/jpeg, image/webp."
@@ -62,16 +71,37 @@ class ChatRequest(BaseModel):
 class ChatMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_mode: Literal["mock", "openai"]
+    source_mode: Literal["openai"]
     confidence: Literal["high", "medium", "low"]
     safety_notes: str = ""
     used_image: bool
+    dialogue_stage: Literal["responded"]
+    planned_action: Literal[
+        "greet",
+        "explain_and_ask",
+        "answer_question",
+        "evaluate_answer",
+        "clarify",
+        "fallback",
+    ]
+    workflow_trace: list[str]
+    input_modality: Literal["text", "image", "multimodal"]
+    route_reason: str = ""
 
 
 class ChatResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    topic: str
-    explanation: str
-    follow_up_question: str
+    session_id: str
+    action: Literal[
+        "greet",
+        "explain_and_ask",
+        "answer_question",
+        "evaluate_answer",
+        "clarify",
+        "fallback",
+    ]
+    message: str
+    follow_up_question: str | None = None
+    topic: str | None = None
     metadata: ChatMetadata

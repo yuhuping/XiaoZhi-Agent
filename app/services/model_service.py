@@ -1,32 +1,50 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
 import base64
+from dataclasses import dataclass
 import json
 import logging
+import re
 from typing import Literal
-from urllib import error, request
 
 from fastapi import HTTPException
+from langsmith import trace, tracing_context
 
+from app.agent.state import AgentState, PlannedAction, UserIntent
 from app.core.config import Settings
+from app.core.langsmith import is_langsmith_enabled
 from app.prompts.tutor_prompts import (
-    build_child_tutor_instruction,
-    build_user_prompt,
+    build_action_instruction,
+    build_action_user_prompt,
+    build_routing_instruction,
+    build_routing_user_prompt,
 )
 from app.schemas.chat import ChatRequest
+
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
 ConfidenceLevel = Literal["high", "medium", "low"]
-SourceMode = Literal["mock", "openai"]
+SourceMode = Literal["openai"]
 
 
 @dataclass(frozen=True)
-class ModelOutput:
-    topic: str
-    explanation: str
-    follow_up_question: str
+class RouteDecision:
+    user_intent: UserIntent
+    planned_action: PlannedAction
+    route_reason: str
+    topic_hint: str | None
+    confidence: ConfidenceLevel
+    source_mode: SourceMode
+
+
+@dataclass(frozen=True)
+class ActionResponse:
+    topic: str | None
+    message: str
+    follow_up_question: str | None
     confidence: ConfidenceLevel
     safety_notes: str
     source_mode: SourceMode
@@ -35,287 +53,354 @@ class ModelOutput:
 class ModelService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self._openai_call_semaphore = asyncio.Semaphore(max(1, settings.openai_max_concurrency))
+        self._text_client: OpenAI | None = None
+        self._vision_client: OpenAI | None = None
 
-    async def generate_child_response(self, chat_request: ChatRequest) -> ModelOutput:
-        if self._should_use_mock():
-            return self._mock_response(chat_request)
+    async def classify_next_action(
+        self,
+        chat_request: ChatRequest,
+        state: AgentState,
+    ) -> RouteDecision:
+        with tracing_context(
+            enabled=is_langsmith_enabled(self.settings),
+            project_name=self.settings.langsmith_project,
+        ):
+            with trace(
+                "classify_next_action",
+                run_type="chain",
+                inputs={
+                    "text": chat_request.text or "",
+                    "has_image": bool(chat_request.image_base64 or chat_request.image_url),
+                    "current_topic": state.get("current_topic"),
+                    "last_agent_question": state.get("last_agent_question"),
+                },
+                metadata={"component": "model_service"},
+            ) as run:
+                async with self._openai_call_semaphore:
+                    result = self._openai_route_decision(chat_request, state)
+                run.end(
+                    outputs={
+                        "planned_action": result.planned_action,
+                        "user_intent": result.user_intent,
+                        "route_reason": result.route_reason,
+                        "source_mode": result.source_mode,
+                    }
+                )
+                return result
 
-        try:
-            return self._openai_response(chat_request)
-        except Exception as exc:
-            logger.exception("openai call failed, falling back to mock mode: %s", exc)
-            return self._mock_response(chat_request)
+    async def generate_action_response(
+        self,
+        chat_request: ChatRequest,
+        state: AgentState,
+        action: PlannedAction,
+    ) -> ActionResponse:
+        with tracing_context(
+            enabled=is_langsmith_enabled(self.settings),
+            project_name=self.settings.langsmith_project,
+        ):
+            with trace(
+                "generate_action_response",
+                run_type="chain",
+                inputs={
+                    "action": action,
+                    "text": chat_request.text or "",
+                    "topic": state.get("current_topic") or state.get("pending_topic"),
+                    "has_image": bool(chat_request.image_base64 or chat_request.image_url),
+                },
+                metadata={"component": "model_service"},
+            ) as run:
+                async with self._openai_call_semaphore:
+                    result = self._openai_action_response(chat_request, state, action)
+                run.end(
+                    outputs={
+                        "topic": result.topic,
+                        "source_mode": result.source_mode,
+                        "has_follow_up_question": bool(result.follow_up_question),
+                    }
+                )
+                return result
 
-    def _should_use_mock(self) -> bool:
-        return self.settings.mock_mode or not self.settings.openai_api_key
-
-    def _openai_response(self, chat_request: ChatRequest) -> ModelOutput:
-        payload = self._build_openai_payload(chat_request)
-        payload_bytes = json.dumps(payload).encode("utf-8")
-        endpoint = f"{self.settings.openai_api_base}/responses"
-        http_request = request.Request(
-            url=endpoint,
-            data=payload_bytes,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.settings.openai_api_key or ''}",
+    def _openai_route_decision(
+        self,
+        chat_request: ChatRequest,
+        state: AgentState,
+    ) -> RouteDecision:
+        parsed = self._call_openai_json(
+            model=self.settings.openai_planning_model,
+            schema_name="xiaozhi_route_decision",
+            schema={
+                "type": "object",
+                "properties": {
+                    "user_intent": {
+                        "type": "string",
+                        "enum": [
+                            "greeting",
+                            "object_learning",
+                            "direct_question",
+                            "answer_attempt",
+                            "unclear",
+                            "fallback",
+                        ],
+                    },
+                    "planned_action": {
+                        "type": "string",
+                        "enum": [
+                            "greet",
+                            "explain_and_ask",
+                            "answer_question",
+                            "evaluate_answer",
+                            "clarify",
+                            "fallback",
+                        ],
+                    },
+                    "route_reason": {"type": "string"},
+                    "topic_hint": {"type": "string"},
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["high", "medium", "low"],
+                    },
+                },
+                "required": [
+                    "user_intent",
+                    "planned_action",
+                    "route_reason",
+                    "topic_hint",
+                    "confidence",
+                ],
+                "additionalProperties": False,
             },
-            method="POST",
+            instruction=build_routing_instruction(),
+            prompt=build_routing_user_prompt(chat_request, state),
+            chat_request=chat_request,
+        )
+        return RouteDecision(
+            user_intent=self._normalize_user_intent(parsed.get("user_intent")),
+            planned_action=self._normalize_action(parsed.get("planned_action")),
+            route_reason=self._clean_text(parsed.get("route_reason"), "Route selected."),
+            topic_hint=self._optional_text(parsed.get("topic_hint")),
+            confidence=self._normalize_confidence(parsed.get("confidence")),
+            source_mode="openai",
         )
 
-        try:
-            with request.urlopen(
-                http_request,
-                timeout=self.settings.request_timeout_seconds,
-            ) as response:
-                raw_body = response.read().decode("utf-8")
-        except error.HTTPError as exc:
-            details = exc.read().decode("utf-8", errors="ignore")
-            raise HTTPException(
-                status_code=502,
-                detail=f"OpenAI API request failed: {details or exc.reason}",
-            ) from exc
-        except error.URLError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"OpenAI API connection failed: {exc.reason}",
-            ) from exc
+    def _openai_action_response(
+        self,
+        chat_request: ChatRequest,
+        state: AgentState,
+        action: PlannedAction,
+    ) -> ActionResponse:
+        parsed = self._call_openai_json(
+            model=self.settings.openai_model,
+            schema_name=f"xiaozhi_action_{action}",
+            schema={
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "message": {"type": "string"},
+                    "follow_up_question": {"type": "string"},
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["high", "medium", "low"],
+                    },
+                    "safety_notes": {"type": "string"},
+                },
+                "required": [
+                    "topic",
+                    "message",
+                    "follow_up_question",
+                    "confidence",
+                    "safety_notes",
+                ],
+                "additionalProperties": False,
+            },
+            instruction=build_action_instruction(action),
+            prompt=build_action_user_prompt(chat_request, state, action),
+            chat_request=chat_request,
+        )
+        # print(f'prompt:{build_action_user_prompt(chat_request, state, action)}')
+        return ActionResponse(
+            topic=self._optional_text(parsed.get("topic")) or state.get("current_topic"),
+            message=self._clean_text(parsed.get("message"), "Let us learn one small thing together."),
+            follow_up_question=self._optional_text(parsed.get("follow_up_question")),
+            confidence=self._normalize_confidence(parsed.get("confidence")),
+            safety_notes=self._clean_text(parsed.get("safety_notes"), ""),
+            source_mode="openai",
+        )
 
-        return self._parse_openai_response(raw_body)
+    def _call_openai_json(
+        self,
+        model: str,
+        schema_name: str,
+        schema: dict,
+        instruction: str,
+        prompt: str,
+        chat_request: ChatRequest,
+    ) -> dict:
+        with tracing_context(
+            enabled=is_langsmith_enabled(self.settings),
+            project_name=self.settings.langsmith_project,
+        ):
+            with trace(
+                "openai_responses_call",
+                run_type="llm",
+                inputs={
+                    "schema_name": schema_name,
+                    "model": model,
+                    "text": chat_request.text or "",
+                    "has_image": bool(chat_request.image_base64 or chat_request.image_url),
+                },
+                metadata={"provider": "llm.chat_completions"},
+            ) as run:
+                payload = self._build_openai_payload(
+                    model,
+                    schema_name,
+                    schema,
+                    instruction,
+                    prompt,
+                    chat_request,
+                )
+                try:
+                    is_vision = bool(chat_request.image_base64 or chat_request.image_url)
+                    client = self._get_vision_client() if is_vision else self._get_text_client()
+                    model_name = "hunyuan-t1-vision-20250916" if is_vision else model
+                    response = client.chat.completions.create(
+                        model=model_name,
+                        messages=payload["messages"],
+                        stream=False,
+                        timeout=self._resolve_request_timeout(chat_request),
+                    )
+                    raw_body = self._extract_completion_content(
+                        response.choices[0].message.content if response.choices else None
+                    )
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"LLM API request failed: {exc}",
+                    ) from exc
 
-    def _build_openai_payload(self, chat_request: ChatRequest) -> dict:
-        content: list[dict[str, object]] = [
-            {
-                "type": "input_text",
-                "text": build_user_prompt(
-                    chat_request.text,
-                    bool(chat_request.image_base64),
-                    chat_request.age_hint,
-                ),
-            }
-        ]
+                text_output = raw_body
+                if not text_output:
+                    raise HTTPException(status_code=502, detail="LLM API returned empty content.")
+                parsed_output = self._parse_json_from_text(text_output)
+                run.end(outputs=parsed_output)
+                return parsed_output
+
+    def _get_text_client(self) -> OpenAI:
+        if self._text_client is None:
+            self._text_client = OpenAI(
+                api_key=self.settings.llm_api_key,
+                base_url=self.settings.llm_base_url,
+            )
+        return self._text_client
+
+    def _get_vision_client(self) -> OpenAI:
+        if self._vision_client is None:
+            self._vision_client = OpenAI(
+                api_key=self.settings.vllm_api_key,
+                base_url="https://api.hunyuan.cloud.tencent.com/v1",
+            )
+        return self._vision_client
+
+    def _build_openai_payload(
+        self,
+        model: str,
+        schema_name: str,
+        schema: dict,
+        instruction: str,
+        prompt: str,
+        chat_request: ChatRequest,
+    ) -> dict:
+        content: list[dict[str, object]] = [{"type": "text", "text": prompt}]
         if chat_request.image_base64:
             content.append(
                 {
-                    "type": "input_image",
-                    "image_url": (
-                        f"data:{chat_request.image_mime_type};base64,"
-                        f"{chat_request.image_base64}"
-                    ),
-                    "detail": "auto",
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{chat_request.image_mime_type};base64,{chat_request.image_base64}",
+                        "detail": "auto",
+                    },
                 }
             )
         elif chat_request.image_url:
             content.append(
                 {
-                    "type": "input_image",
-                    "image_url": str(chat_request.image_url),
-                    "detail": "auto",
+                    "type": "image_url",
+                    "image_url": {"url": str(chat_request.image_url), "detail": "auto"},
                 }
             )
-
         return {
-            "model": self.settings.openai_model,
-            "input": [
-                {
-                    "role": "system",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": build_child_tutor_instruction(),
-                        }
-                    ],
-                },
+            "model": model,
+            "messages": [
+                {"role": "system", "content": self._build_schema_instruction(instruction, schema)},
                 {"role": "user", "content": content},
             ],
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "child_explain_and_ask",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "topic": {"type": "string"},
-                            "explanation": {"type": "string"},
-                            "follow_up_question": {"type": "string"},
-                            "confidence": {
-                                "type": "string",
-                                "enum": ["high", "medium", "low"],
-                            },
-                            "safety_notes": {"type": "string"},
-                        },
-                        "required": [
-                            "topic",
-                            "explanation",
-                            "follow_up_question",
-                            "confidence",
-                            "safety_notes",
-                        ],
-                        "additionalProperties": False,
-                    },
-                }
-            },
         }
 
-    def _parse_openai_response(self, raw_body: str) -> ModelOutput:
-        parsed = json.loads(raw_body)
-        text_output = self._extract_openai_text(parsed)
-        if not text_output:
-            raise HTTPException(status_code=502, detail="OpenAI API returned empty content.")
-
-        structured = json.loads(text_output)
-        return ModelOutput(
-            topic=self._clean_text(structured.get("topic"), fallback="topic"),
-            explanation=self._clean_text(
-                structured.get("explanation"),
-                fallback="This is something interesting to learn about.",
-            ),
-            follow_up_question=self._ensure_question(
-                self._clean_text(
-                    structured.get("follow_up_question"),
-                    fallback="What do you notice about it?",
-                )
-            ),
-            confidence=self._normalize_confidence(structured.get("confidence")),
-            safety_notes=self._clean_text(structured.get("safety_notes"), fallback=""),
-            source_mode="openai",
-        )
-
-    def _extract_openai_text(self, parsed: dict) -> str:
-        output_text = parsed.get("output_text")
-        if isinstance(output_text, str) and output_text.strip():
-            return output_text.strip()
-
-        output_items = parsed.get("output")
-        if not isinstance(output_items, list):
-            return ""
-
-        text_chunks: list[str] = []
-        for item in output_items:
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") != "message":
-                continue
-            content_items = item.get("content")
-            if not isinstance(content_items, list):
-                continue
-            for content in content_items:
-                if not isinstance(content, dict):
+    def _extract_completion_content(self, content: object) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if not isinstance(item, dict):
                     continue
-                content_type = content.get("type")
-                if content_type == "output_text":
-                    text_value = content.get("text")
-                    if isinstance(text_value, str) and text_value.strip():
-                        text_chunks.append(text_value.strip())
-                elif content_type == "refusal":
-                    refusal = content.get("refusal")
-                    if isinstance(refusal, str) and refusal.strip():
-                        raise HTTPException(
-                            status_code=502,
-                            detail=f"OpenAI API refusal: {refusal.strip()}",
-                        )
-        return "\n".join(text_chunks).strip()
+                if item.get("type") == "text" and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+            return "\n".join(parts).strip()
+        return ""
 
-    def _mock_response(self, chat_request: ChatRequest) -> ModelOutput:
-        if self._looks_unsafe(chat_request.text):
-            return ModelOutput(
-                topic="safe learning topic",
-                explanation=(
-                    "We should talk about safe and simple learning ideas. "
-                    "We can learn about animals, colors, or fruit instead."
-                ),
-                follow_up_question="Would you like to talk about a cat or an apple?",
-                confidence="high",
-                safety_notes="Redirected away from unsafe or adult content.",
-                source_mode="mock",
-            )
-
-        topic = self._detect_topic(chat_request)
-        explanation = self._generate_explanation(topic, used_image=bool(chat_request.image_base64))
-        follow_up = self._generate_follow_up_question(topic)
-        confidence: ConfidenceLevel = "medium" if chat_request.image_base64 else "high"
-        return ModelOutput(
-            topic=topic,
-            explanation=explanation,
-            follow_up_question=follow_up,
-            confidence=confidence,
-            safety_notes="",
-            source_mode="mock",
+    def _build_schema_instruction(self, instruction: str, schema: dict) -> str:
+        schema_json = json.dumps(schema, ensure_ascii=False)
+        return (
+            f"{instruction}\n\n"
+            "Output requirements:\n"
+            "1. Reply with a single JSON object only.\n"
+            "2. Do not include markdown, code fences, or extra commentary.\n"
+            f"3. Follow this JSON schema exactly: {schema_json}"
         )
 
-    def _detect_topic(self, chat_request: ChatRequest) -> str:
-        text = (chat_request.text or "").lower()
-        keyword_map = {
-            "apple": "apple",
-            "cat": "cat",
-            "dog": "dog",
-            "car": "car",
-            "bus": "bus",
-            "banana": "banana",
-            "moon": "moon",
-            "star": "star",
-            "flower": "flower",
-            "tree": "tree",
-        }
-        for keyword, topic in keyword_map.items():
-            if keyword in text:
-                return topic
-        if chat_request.image_base64 or chat_request.image_url:
-            return "picture"
-        return "topic"
+    def _parse_json_from_text(self, text: str) -> dict:
+        raw = text.strip()
+        if not raw:
+            raise HTTPException(status_code=502, detail="LLM API returned empty text content.")
 
-    def _generate_explanation(self, topic: str, used_image: bool) -> str:
-        explanations = {
-            "apple": "An apple is a fruit. It is often round, crunchy, and sweet.",
-            "cat": "A cat is a small animal with soft fur. Many cats like to jump and explore.",
-            "dog": "A dog is an animal that can run, play, and learn from people.",
-            "car": "A car is a vehicle that helps people travel from one place to another.",
-            "bus": "A bus is a big vehicle that can carry many people together.",
-            "banana": "A banana is a fruit with a soft inside and a yellow peel.",
-            "moon": "The moon is the bright object we often see in the night sky.",
-            "star": "A star is a shining light in the sky that is very far away.",
-            "flower": "A flower is part of a plant and can have many bright colors.",
-            "tree": "A tree is a tall plant with a trunk, branches, and leaves.",
-            "picture": "This looks like something we can learn from together. We can talk about what stands out in the image.",
-            "topic": "This is something fun to learn about. We can describe it in a simple way.",
-        }
-        explanation = explanations.get(topic, explanations["topic"])
-        if used_image and topic != "picture":
-            return f"I think this image shows a {topic}. {explanation}"
-        return explanation
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
 
-    def _generate_follow_up_question(self, topic: str) -> str:
-        questions = {
-            "apple": "What color do you think an apple can be?",
-            "cat": "What sound does a cat make?",
-            "dog": "Can you name something a dog likes to do?",
-            "car": "What sound do you think a car makes?",
-            "bus": "Have you seen a bus on the road before?",
-            "banana": "What color is a banana when it is ripe?",
-            "moon": "Do you see the moon in the day or at night most often?",
-            "star": "Can you point to the sky where stars appear at night?",
-            "flower": "What flower color do you like most?",
-            "tree": "What grows on some trees?",
-            "picture": "What is the first thing you notice in the picture?",
-            "topic": "What do you notice about it?",
-        }
-        return questions.get(topic, questions["topic"])
+        fence_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", raw, flags=re.IGNORECASE)
+        if fence_match:
+            candidate = fence_match.group(1).strip()
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
 
-    def _looks_unsafe(self, text: str | None) -> bool:
-        if not text:
-            return False
-        lowered = text.lower()
-        unsafe_keywords = {
-            "kill",
-            "weapon",
-            "sex",
-            "nude",
-            "suicide",
-            "blood",
-            "hurt someone",
-        }
-        return any(keyword in lowered for keyword in unsafe_keywords)
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            candidate = raw[start : end + 1]
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM API returned non-JSON content: {raw[:300]}",
+        )
+
+    def _resolve_request_timeout(self, chat_request: ChatRequest) -> int:
+        if chat_request.image_base64:
+            return self.settings.openai_image_request_timeout_seconds
+        return self.settings.request_timeout_seconds
 
     def _clean_text(self, value: object, fallback: str) -> str:
         if not isinstance(value, str):
@@ -323,13 +408,20 @@ class ModelService:
         cleaned = " ".join(value.strip().split())
         return cleaned or fallback
 
-    def _normalize_confidence(self, value: object) -> ConfidenceLevel:
-        if isinstance(value, str) and value in {"high", "medium", "low"}:
-            return value
-        return "medium"
+    def _optional_text(self, value: object) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = " ".join(value.strip().split())
+        return cleaned or None
 
-    def _ensure_question(self, value: str) -> str:
-        return value if value.endswith("?") else f"{value}?"
+    def _normalize_confidence(self, value: object) -> ConfidenceLevel:
+        return value if isinstance(value, str) and value in {"high", "medium", "low"} else "medium"
+
+    def _normalize_user_intent(self, value: object) -> UserIntent:
+        return value if isinstance(value, str) and value in {"greeting", "object_learning", "direct_question", "answer_attempt", "unclear", "fallback"} else "fallback"
+
+    def _normalize_action(self, value: object) -> PlannedAction:
+        return value if isinstance(value, str) and value in {"greet", "explain_and_ask", "answer_question", "evaluate_answer", "clarify", "fallback"} else "fallback"
 
     def decode_image_for_debug(self, image_base64: str) -> bytes:
         return base64.b64decode(image_base64, validate=True)
