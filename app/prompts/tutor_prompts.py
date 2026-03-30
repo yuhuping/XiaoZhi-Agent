@@ -2,110 +2,96 @@ from __future__ import annotations
 
 import textwrap
 
-from app.agent.state import AgentState, PlannedAction
-from app.schemas.chat import ChatRequest
+from app.agent.state import AgentState
+from app.schemas.chat import ChatRequest, InteractionMode
 
 
-def build_routing_instruction() -> str:
+def build_reason_instruction(mode: InteractionMode) -> str:
+    if mode == "education":
+        mode_rule = "Education mode: guide thinking first, then answer with one simple follow-up question."
+    elif mode == "companion":
+        mode_rule = "Companion mode: keep it warm and natural, answer directly when appropriate."
+    else:
+        mode_rule = (
+            "Parent mode: respond to guardians with practical, accurate, and concise guidance, "
+            "including concrete next steps when useful."
+        )
     return textwrap.dedent(
-        """
-        You are the routing brain for XiaoZhi, a child-learning assistant for children aged 3 to 8.
-        Choose the next action for the current turn.
-        Priorities:
-        1. Pure greetings like "hello" or "你好" should route to greet.
-        2. Image recognition or simple "what is this" learning should route to explain_and_ask.
-        3. Direct knowledge questions should route to answer_question.
-        4. If the child is answering the assistant's previous question, route to evaluate_answer.
-        5. If the input depends on missing context, route to clarify.
-        6. Use fallback only when no better action fits or safety requires redirection.
-        Do not treat a greeting as a vocabulary word to explain.
+        f"""
+        You are XiaoZhi's controlled ReAct planner for children aged 3 to 8.
+        {mode_rule}
+        Decide whether to answer directly or call one bound tool when grounding or memory lookup is needed.
+        Retrieval policy:
+        - Prefer local knowledge retrieval for stable educational facts.
+        - Prefer web search only for recent, time-sensitive, or current-event questions.
+        Memory policy:
+        - Use memory lookup only when short child input depends on prior context.
+        Keep planning robust and concise.
         """
     ).strip()
 
 
-def build_routing_user_prompt(chat_request: ChatRequest, state: AgentState) -> str:
-    history_text = _format_history(state)
+def build_reason_user_prompt(chat_request: ChatRequest, state: AgentState) -> str:
     return textwrap.dedent(
         f"""
-        Child age range: {chat_request.age_hint or "3-8"}
-        Current user text: {(chat_request.text or "").strip() or "No text provided."}
-        Has image input: {"yes" if chat_request.image_base64 or chat_request.image_url else "no"}
-        Topic hint: {state.get("current_topic") or state.get("topic_hint") or "unknown"}
-        Last assistant action: {state.get("last_agent_action") or "none"}
+        Mode: {chat_request.mode}
+        Age band: {chat_request.age_hint or "3-8"}
+        User text: {(chat_request.text or "").strip() or "No text provided."}
+        Has image: {"yes" if chat_request.image_base64 or chat_request.image_url else "no"}
+        Current topic: {state.get("current_topic") or state.get("topic_hint") or "unknown"}
         Last assistant question: {state.get("last_agent_question") or "none"}
         Perception signals: {", ".join(state.get("perception_signals", [])) or "none"}
+        Memory:
+        {state.get("Memory") or {}}
         Recent history:
-        {history_text}
-
-        Return JSON with:
-        - user_intent: greeting | object_learning | direct_question | answer_attempt | unclear | fallback
-        - planned_action: greet | explain_and_ask | answer_question | evaluate_answer | clarify | fallback
-        - route_reason: a short sentence
-        - topic_hint: short noun phrase or empty string
-        - confidence: high | medium | low
+        {_format_history(state)}
         """
     ).strip()
 
 
-def build_action_instruction(action: PlannedAction) -> str:
-    base = """
-        You are XiaoZhi, a child-learning assistant for children aged 3 to 8.
-        Keep the answer warm, short, educational, and easy to understand.
-        Do not act like a parent, therapist, or best friend.
-        Do not include unsafe, adult, scary, or manipulative content.
-        Keep the reply natural and conversational.
-    """
-    action_rules = {
-        "greet": """
-            The child is greeting you.
-            Reply with a short welcome message and optionally one gentle learning invitation.
-            Do not explain the literal meaning of the greeting.
-        """,
-        "explain_and_ask": """
-            Explain the object or topic simply in one or two short sentences.
-            Ask exactly one easy follow-up question.
-        """,
-        "answer_question": """
-            Answer the child's question directly in simple language.
-            You may add one easy follow-up question if it helps continue learning.
-        """,
-        "evaluate_answer": """
-            The child is answering your previous question.
-            Start with encouragement, then give a light correction or extension if needed.
-            You may ask one easy next question.
-        """,
-        "clarify": """
-            Politely ask a short clarifying question because there is not enough context.
-            Do not invent a full explanation.
-        """,
-        "fallback": """
-            Redirect gently to a safe and simple learning exchange.
-            Keep it short and supportive.
-        """,
-    }
-    return textwrap.dedent(base + action_rules[action]).strip()
-
-
-def build_action_user_prompt(
-    chat_request: ChatRequest,
-    state: AgentState,
-    action: PlannedAction,
-) -> str:
-    history_text = _format_history(state)   # _format_history会返回近6轮的对话历史，格式化成字符串 | 有待优化
+def build_response_instruction(mode: InteractionMode) -> str:
+    if mode == "education":
+        mode_rule = "Education mode: explain briefly, guide with one easy follow-up question."
+    elif mode == "companion":
+        mode_rule = "Companion mode: respond naturally and warmly, follow-up question is optional."
+    else:
+        mode_rule = (
+            "Parent mode: use a professional but friendly tone, keep replies concise and practical, "
+            "and avoid child-directed wording."
+        )
     return textwrap.dedent(
         f"""
-        Child age range: {chat_request.age_hint or "3-8"}
-        Current action: {action}
-        Current user text: {(chat_request.text or "").strip() or "No text provided."}
-        Has image input: {"yes" if chat_request.image_base64 or chat_request.image_url else "no"}
-        Current topic: {state.get("current_topic") or state.get("pending_topic") or "unknown"}
-        Last assistant question: {state.get("last_agent_question") or "none"}
-        Recent history:
-        {history_text}
+        You are XiaoZhi, a child-facing assistant for ages 3 to 8.
+        {mode_rule}
+        Keep response short, safe, warm, and clear.
+        Avoid adult, unsafe, manipulative, or scary content.
+        In parent mode, prioritize clarity, key facts, and actionable suggestions.
+        """
+    ).strip()
 
-        Return JSON with:
-        - topic: short noun phrase, or empty string if not needed
-        - message: the main assistant reply
+
+def build_response_user_prompt(chat_request: ChatRequest, state: AgentState) -> str:
+    return textwrap.dedent(
+        f"""
+        Mode: {chat_request.mode}
+        Age band: {chat_request.age_hint or "3-8"}
+        User text: {(chat_request.text or "").strip() or "No text provided."}
+        Current topic: {state.get("current_topic") or "unknown"}
+        ReAct decision: {state.get("react_decision") or "none"}
+        Selected act: {state.get("selected_act") or "direct"}
+        Observation summary: {state.get("observation_summary") or "none"}
+        Retrieved context:
+        {_format_retrieved_chunks(state)}
+        short_Memory:
+        {state.get("short_Memory") or {}}
+        Memory:
+        {state.get("Memory") or {}}
+        Recent history:
+        {_format_history(state)}
+
+        Return JSON:
+        - topic: short noun phrase or empty string
+        - message: final child-friendly reply
         - follow_up_question: one short question or empty string
         - confidence: high | medium | low
         - safety_notes: short string, empty if no issue
@@ -121,6 +107,17 @@ def _format_history(state: AgentState) -> str:
     for turn in history[-6:]:
         role = turn.get("role", "unknown")
         text = turn.get("text", "")
-        action = turn.get("action") or "none"
-        lines.append(f"- {role} [{action}]: {text}")
+        lines.append(f"- {role}: {text}")
+    return "\n".join(lines)
+
+
+def _format_retrieved_chunks(state: AgentState) -> str:
+    chunks = state.get("retrieved_chunks", [])
+    if not chunks:
+        return "No retrieval."
+    lines = []
+    for chunk in chunks[:3]:
+        lines.append(
+            f"- source={chunk.get('source')} score={chunk.get('score')} snippet={chunk.get('snippet')}"
+        )
     return "\n".join(lines)

@@ -33,3 +33,7 @@ Thumbs.db
 
 .tmp-codex-home/
 .tmp-codex-home-no-parent/
+data/
+*.sqlite3
+
+tests/

@@ -1,8 +1,15 @@
+from __future__ import annotations
+
 import base64
 import os
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+
+InputModality = Literal["text", "image", "multimodal"]
+InteractionMode = Literal["education", "companion", "parent"]
+ActType = Literal["direct", "retrieve_knowledge", "read_memory"]
+ConfidenceLevel = Literal["high", "medium", "low"]
 
 
 def _max_upload_image_bytes() -> int:
@@ -34,7 +41,16 @@ class ChatRequest(BaseModel):
     )
     session_id: str | None = Field(
         default=None,
-        description="Optional session identifier for future extensibility.",
+        description="Optional session identifier for short-term memory.",
+        max_length=100,
+    )
+    mode: InteractionMode = Field(
+        default="education",
+        description="Interaction mode selected by frontend.",
+    )
+    profile_id: str | None = Field(
+        default=None,
+        description="Optional profile identifier for lightweight profile memory.",
         max_length=100,
     )
 
@@ -68,40 +84,64 @@ class ChatRequest(BaseModel):
         return self
 
 
+class ReactInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: str
+    selected_act: ActType
+    tool_name: str | None = None
+    tool_success: bool
+    reason: str
+
+
+class GroundingSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    score: float
+    snippet: str
+
+
+class GroundingInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    used_rag: bool
+    sources: list[GroundingSource] = Field(default_factory=list)
+
+
+class MemoryInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_updated: bool
+    profile_updated: bool
+    written_types: list[str] = Field(default_factory=list)
+    consolidated_count: int = 0
+    forgotten_count: int = 0
+
+
 class ChatMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_mode: Literal["openai"]
-    confidence: Literal["high", "medium", "low"]
+    source_mode: Literal["llm"]
+    confidence: ConfidenceLevel
     safety_notes: str = ""
     used_image: bool
     dialogue_stage: Literal["responded"]
-    planned_action: Literal[
-        "greet",
-        "explain_and_ask",
-        "answer_question",
-        "evaluate_answer",
-        "clarify",
-        "fallback",
-    ]
     workflow_trace: list[str]
-    input_modality: Literal["text", "image", "multimodal"]
+    input_modality: InputModality
     route_reason: str = ""
+    rag_enabled: bool
 
 
 class ChatResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
-    action: Literal[
-        "greet",
-        "explain_and_ask",
-        "answer_question",
-        "evaluate_answer",
-        "clarify",
-        "fallback",
-    ]
+    mode: InteractionMode
     message: str
     follow_up_question: str | None = None
     topic: str | None = None
+    react: ReactInfo
+    grounding: GroundingInfo
+    memory: MemoryInfo
     metadata: ChatMetadata

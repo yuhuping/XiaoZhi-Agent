@@ -3,73 +3,73 @@ from __future__ import annotations
 import logging
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
 from langsmith import trace, tracing_context
 
-from app.agent.nodes.action_router import ActionRouterNode
-from app.agent.nodes.answer_question import AnswerQuestionNode
-from app.agent.nodes.clarify import ClarifyNode
-from app.agent.nodes.evaluate_answer import EvaluateAnswerNode
-from app.agent.nodes.explain_and_ask import ExplainAndAskNode
-from app.agent.nodes.fallback import FallbackNode
-from app.agent.nodes.greet import GreetNode
-from app.agent.nodes.perception import PerceptionNode
-from app.agent.nodes.planning import PlanningNode
+from app.agent.nodes.memory_update import MemoryUpdateNode
+from app.agent.nodes.memory_compact import MemoryCompactNode
+from app.agent.nodes.observe import ObserveNode
+from app.agent.nodes.reason import ReasonNode
+from app.agent.nodes.respond import RespondNode
 from app.agent.nodes.response import ResponseNode
 from app.agent.nodes.state_update import StateUpdateNode
-from app.agent.router import resolve_action_route
+from app.agent.nodes.understand import UnderstandNode
 from app.agent.state import AgentState
 from app.core.langsmith import is_langsmith_enabled
 from app.services.model_service import ModelService
-from app.services.session_store import SessionStore
 from app.tools.basic_tools import BasicTools
 
 logger = logging.getLogger(__name__)
+from IPython.display import Image, display
 
 
 class AgentGraph:
-    def __init__(self, model_service: ModelService, session_store: SessionStore) -> None:
+    def __init__(
+        self,
+        model_service: ModelService,
+        tools: BasicTools,
+    ) -> None:
         self.settings = model_service.settings
-        tools = BasicTools(model_service=model_service)
         builder = StateGraph(AgentState)
 
-        builder.add_node("perception", PerceptionNode(tools))
-        builder.add_node("state_update", StateUpdateNode(session_store))
-        builder.add_node("planning", PlanningNode(tools))
-        builder.add_node("action_router", ActionRouterNode())
-        builder.add_node("greet", GreetNode(tools))
-        builder.add_node("explain_and_ask", ExplainAndAskNode(tools))
-        builder.add_node("answer_question", AnswerQuestionNode(tools))
-        builder.add_node("evaluate_answer", EvaluateAnswerNode(tools))
-        builder.add_node("clarify", ClarifyNode(tools))
-        builder.add_node("fallback", FallbackNode(tools))
-        builder.add_node("response", ResponseNode(session_store))
+        builder.add_node("understand", UnderstandNode(tools))
+        builder.add_node("state_update", StateUpdateNode(tools))
+        builder.add_node("chatbot", ReasonNode(tools))
+        builder.add_node("tools", ToolNode(tools=tools.as_langgraph_tools(), messages_key="messages"))
+        builder.add_node("observe", ObserveNode())
+        builder.add_node("respond", RespondNode(tools))
+        builder.add_node("memory_update", MemoryUpdateNode(tools))
+        builder.add_node("response", ResponseNode())
+        builder.add_node("memory_compact", MemoryCompactNode(tools))
 
-        builder.add_edge(START, "perception")
-        builder.add_edge("perception", "state_update")
-        builder.add_edge("state_update", "planning")
-        builder.add_edge("planning", "action_router")
+        builder.add_edge(START, "understand")
+        builder.add_edge("understand", "state_update")
+        builder.add_edge("state_update", "chatbot")
         builder.add_conditional_edges(
-            "action_router",
-            resolve_action_route,
+            "chatbot",
+            tools_condition,
             {
-                "greet": "greet",
-                "explain_and_ask": "explain_and_ask",
-                "answer_question": "answer_question",
-                "evaluate_answer": "evaluate_answer",
-                "clarify": "clarify",
-                "fallback": "fallback",
+                "tools": "tools",
+                "__end__": "observe",
             },
         )
-        builder.add_edge("greet", "response")
-        builder.add_edge("explain_and_ask", "response")
-        builder.add_edge("answer_question", "response")
-        builder.add_edge("evaluate_answer", "response")
-        builder.add_edge("clarify", "response")
-        builder.add_edge("fallback", "response")
-        builder.add_edge("response", END)
+        builder.add_edge("tools", "observe")
+        builder.add_edge("observe", "respond")
+        builder.add_edge("respond", "memory_update")
+        builder.add_edge("memory_update", "response")
+        builder.add_edge("response", "memory_compact")
+        builder.add_edge("memory_compact", END)
 
         self.graph = builder.compile()
         logger.info("agent graph compiled")
+
+        # try:# 生成graph图片时候用
+        #     png_data = self.graph.get_graph().draw_mermaid_png()
+        #     with open("graph.png", "wb") as f:
+        #         f.write(png_data)
+        #     display(Image(png_data))
+        # except Exception as e:
+        #     print(e)
 
     async def run(self, state: AgentState) -> AgentState:
         logger.info("workflow started")
@@ -84,13 +84,16 @@ class AgentGraph:
                     "session_id": state.get("session_id"),
                     "user_input": state.get("user_input"),
                     "input_modality": state.get("input_modality"),
+                    "mode": state.get("interaction_mode"),
                 },
                 metadata={"component": "langgraph"},
             ) as run:
                 result = await self.graph.ainvoke(state)
                 run.end(
                     outputs={
-                        "planned_action": result.get("final_response", {}).get("action"),
+                        "selected_act": result.get("final_response", {})
+                        .get("react", {})
+                        .get("selected_act"),
                         "workflow_trace": result.get("final_response", {})
                         .get("metadata", {})
                         .get("workflow_trace", []),

@@ -24,8 +24,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="XiaoZhi API",
-    version="1.2.0",
-    description="A workflow-driven child-friendly multimodal learning companion prototype.",
+    version="1.3.0",
+    description="A controlled ReAct child-learning agent prototype with local RAG and lightweight memory.",
     lifespan=lifespan,
 )
 

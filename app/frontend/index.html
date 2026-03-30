@@ -389,6 +389,13 @@
       font-size: 13px;
     }
 
+    .meta-note {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      opacity: 0.92;
+    }
+
     .composer {
       padding: 16px 18px 18px;
       border-top: 1px solid rgba(88, 68, 33, 0.06);
@@ -509,20 +516,29 @@
       </section>
 
       <section class="config">
-        <h2>Input Settings</h2>
-        <p>Configure template, age, session, and optional image.</p>
+        <h2>输入设置</h2>
+        <p>配置模式、年龄、会话、画像标识和可选图片输入。</p>
 
         <div class="field">
-          <label for="template-select">Template</label>
+          <label for="template-select">模板</label>
           <select id="template-select">
-            <option value="">Choose a template</option>
-            <option value="text-only">Text Only: apple learning</option>
-            <option value="text-plus-image">Text + Image: picture understanding</option>
+            <option value="">选择模板</option>
+            <option value="text-only">文本学习：苹果</option>
+            <option value="text-plus-image">图文理解：图片识别</option>
           </select>
         </div>
 
         <div class="field">
-          <label for="age-hint">Age Hint</label>
+          <label for="mode-select">交互模式</label>
+          <select id="mode-select">
+            <option value="education" selected>教育模式</option>
+            <option value="companion">陪伴模式</option>
+            <option value="parent">家长模式</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="age-hint">年龄段</label>
           <select id="age-hint">
             <option value="3-5">3-5</option>
             <option value="3-8" selected>3-8</option>
@@ -532,27 +548,32 @@
         </div>
 
         <div class="field">
-          <label for="session-id">Session ID</label>
+          <label for="session-id">会话ID</label>
           <input id="session-id" type="text" placeholder="optional-session-1" />
         </div>
 
         <div class="field">
-          <label for="image-url">Image URL</label>
+          <label for="profile-id">画像ID（可选）</label>
+          <input id="profile-id" type="text" placeholder="kid-profile-1" />
+        </div>
+
+        <div class="field">
+          <label for="image-url">图片URL</label>
           <input id="image-url" type="url" placeholder="https://example.com/cat.jpg" />
         </div>
 
         <div class="upload-wrap">
           <div class="field">
-            <label for="image-file">Upload Image File</label>
+            <label for="image-file">上传图片</label>
             <input id="image-file" type="file" accept="image/png,image/jpeg,image/webp" />
           </div>
           <div class="inline-actions">
-            <button id="clear-image" class="subtle-btn" type="button">Clear Image</button>
-            <button id="sample-text-btn" class="subtle-btn" type="button">Text Sample</button>
-            <button id="sample-image-btn" class="subtle-btn" type="button">Image Sample</button>
+            <button id="clear-image" class="subtle-btn" type="button">清空图片</button>
+            <button id="sample-text-btn" class="subtle-btn" type="button">文本样例</button>
+            <button id="sample-image-btn" class="subtle-btn" type="button">图文样例</button>
           </div>
           <div class="preview" id="preview">
-            <span>No image selected yet.</span>
+            <span>暂未选择图片。</span>
           </div>
         </div>
       </section>
@@ -586,12 +607,20 @@
   <script>
     const endpoint = "/api/v1/chat/explain-and-ask";
     const sessionStorageKey = "xiaozhi.playground.session_id";
+    // 按模式映射默认画像ID，前端切换模式时强制覆盖。
+    const MODE_DEFAULT_PROFILE = {
+      education: "default_child",
+      companion: "default_child",
+      parent: "default_parent",
+    };
 
     const elements = {
       text: document.getElementById("text-input"),
       ageHint: document.getElementById("age-hint"),
+      modeSelect: document.getElementById("mode-select"),
       templateSelect: document.getElementById("template-select"),
       sessionId: document.getElementById("session-id"),
+      profileId: document.getElementById("profile-id"),
       imageUrl: document.getElementById("image-url"),
       imageFile: document.getElementById("image-file"),
       clearImage: document.getElementById("clear-image"),
@@ -684,6 +713,16 @@
       return persistSessionId(sessionId);
     }
 
+    function resolveDefaultProfileId(mode) {
+      // 根据当前模式返回默认画像ID。
+      return MODE_DEFAULT_PROFILE[mode] || MODE_DEFAULT_PROFILE.education;
+    }
+
+    function syncProfileIdWithMode() {
+      // 模式切换时强制同步profile_id。
+      elements.profileId.value = resolveDefaultProfileId(elements.modeSelect.value);
+    }
+
     function renderPreview() {
       if (uploadedImage.previewUrl) {
         elements.preview.innerHTML = `<img src="${uploadedImage.previewUrl}" alt="preview" />`;
@@ -759,8 +798,10 @@
       const sessionId = ensureSessionId();
       const payload = {
         text: elements.text.value.trim() || undefined,
+        mode: elements.modeSelect.value,
         age_hint: elements.ageHint.value,
         session_id: sessionId,
+        profile_id: elements.profileId.value.trim() || undefined,
       };
 
       if (uploadedImage.base64) {
@@ -845,8 +886,16 @@
       if (data.follow_up_question) {
         const followup = document.createElement("div");
         followup.className = "followup";
-        followup.textContent = `Question: ${data.follow_up_question}`;
+        followup.textContent = `追问：${data.follow_up_question}`;
         bubble.appendChild(followup);
+      }
+
+      const react = data.react || {};
+      if (react.selected_act) {
+        const note = document.createElement("div");
+        note.className = "meta-note";
+        note.textContent = `模式: ${data.mode || "-"} | ReAct: ${react.selected_act} | 工具: ${react.tool_name || "none"}`;
+        bubble.appendChild(note);
       }
 
       bubbleWrap.appendChild(label);
@@ -865,7 +914,7 @@
       elements.imageUrl.value = "";
       renderPreview();
       if (!silent) {
-        setStatus("Ready", "Image removed.");
+        setStatus("准备就绪", "图片已移除。");
       }
     }
 
@@ -882,18 +931,22 @@
 
       if (templateName === "text-only") {
         elements.text.value = "Tell me about an apple in a simple way.";
+        elements.modeSelect.value = "education";
         elements.ageHint.value = "4-6";
+        syncProfileIdWithMode();
         renderPreview();
-        setStatus("Ready", "Text template loaded.");
+        setStatus("准备就绪", "文本模板已加载。");
         return;
       }
 
       if (templateName === "text-plus-image") {
         elements.text.value = "What is in this picture? Please explain it simply.";
+        elements.modeSelect.value = "education";
         elements.ageHint.value = "3-8";
         elements.imageUrl.value = "https://ts1.tc.mm.bing.net/th/id/OIP-C.z3qX0zn2LVe8g6vgxVRWrQAAAA?w=193&h=135&c=8&rs=1&qlt=90&o=6&pid=3.1&rm=2";
+        syncProfileIdWithMode();
         renderPreview();
-        setStatus("Ready", "Text + image template loaded.");
+        setStatus("准备就绪", "图文模板已加载。");
       }
     }
 
@@ -977,7 +1030,7 @@
         clearImageSelection(true);
         elements.imageFile.value = "";
         const message = error instanceof Error ? error.message : "Failed to process this image.";
-        setStatus("Error", message);
+        setStatus("错误", message);
       }
     });
 
@@ -1005,6 +1058,10 @@
       applyTemplate(event.target.value);
     });
 
+    elements.modeSelect.addEventListener("change", () => {
+      syncProfileIdWithMode();
+    });
+
     elements.sessionId.addEventListener("input", () => {
       const value = elements.sessionId.value.trim();
       if (value) {
@@ -1019,6 +1076,7 @@
     elements.newChatBtn.addEventListener("click", () => {
       ensureSessionId(true);
       elements.text.value = "";
+      syncProfileIdWithMode();
       clearImageSelection(true);
       resetConversationView();
       setStatus("准备就绪", "新对话已开始。");
@@ -1034,6 +1092,7 @@
     });
 
     ensureSessionId();
+    syncProfileIdWithMode();
     renderPreview();
     syncEmptyState();
   </script>

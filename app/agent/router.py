@@ -1,31 +1,29 @@
 from __future__ import annotations
 
-from app.agent.state import AgentState, PlannedAction
+from app.agent.state import AgentState
 
 WORKFLOW_ROUTE = (
-    "perception",
+    "understand",
     "state_update",
-    "planning",
-    "action_router",
+    "chatbot",
+    "tools",
+    "observe",
+    "respond",
+    "memory_update",
     "response",
+    "memory_compact",
 )
 
-ACTION_NODES: tuple[PlannedAction, ...] = (
-    "greet",
-    "explain_and_ask",
-    "answer_question",
-    "evaluate_answer",
-    "clarify",
-    "fallback",
-)
+ACT_ROUTE_MAP = {
+    "direct": "act_direct",
+    "retrieve_knowledge": "act_retrieve",
+    "read_memory": "act_memory",
+}
 
 
 def get_workflow_route() -> list[str]:
     return list(WORKFLOW_ROUTE)
 
 
-def resolve_action_route(state: AgentState) -> PlannedAction:
-    planned_action = state.get("planned_action")
-    if planned_action in ACTION_NODES:
-        return planned_action
-    return "fallback"
+def resolve_act_route(state: AgentState) -> str:
+    return ACT_ROUTE_MAP.get(state.get("selected_act", "direct"), "act_direct")
