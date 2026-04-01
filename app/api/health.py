@@ -18,6 +18,11 @@ async def logo() -> FileResponse:
     return FileResponse(LOGO_PATH, media_type="image/png")
 
 
+@router.get("/favicon.ico")
+async def favicon() -> FileResponse:
+    return FileResponse(LOGO_PATH, media_type="image/png")
+
+
 @router.get("/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}

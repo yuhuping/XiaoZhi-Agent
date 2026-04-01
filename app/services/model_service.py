@@ -4,12 +4,13 @@ import asyncio
 import base64
 from dataclasses import dataclass
 from datetime import datetime
+import inspect
 import json
 import logging
 from pathlib import Path
 import re
 import tempfile
-from typing import Any, Literal
+from typing import Any, Awaitable, Callable, Literal
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -33,6 +34,7 @@ from app.schemas.chat import ActType, ChatRequest, ConfidenceLevel
 logger = logging.getLogger(__name__)
 
 SourceMode = Literal["llm"]
+DeltaCallback = Callable[[str], Awaitable[None] | None]
 
 
 @dataclass(frozen=True)
@@ -122,6 +124,7 @@ class ModelService:
         self,
         chat_request: ChatRequest,
         state: AgentState,
+        on_delta: DeltaCallback | None = None,
     ) -> ResponseDraft:
         with tracing_context(
             enabled=is_langsmith_enabled(self.settings),
@@ -139,42 +142,57 @@ class ModelService:
                 metadata={"component": "model_service"},
             ) as run:
                 async with self._openai_call_semaphore:
-                    parsed = self._call_llm_json(
-                        model=self.settings.llm_model,
-                        schema_name="xiaozhi_response",
-                        schema={
-                            "type": "object",
-                            "properties": {
-                                "topic": {"type": "string"},
-                                "message": {"type": "string"},
-                                "follow_up_question": {"type": "string"},
-                                "confidence": {
-                                    "type": "string",
-                                    "enum": ["high", "medium", "low"],
+                    if on_delta is None:
+                        parsed = self._call_llm_json(
+                            model=self.settings.llm_model,
+                            schema_name="xiaozhi_response",
+                            schema={
+                                "type": "object",
+                                "properties": {
+                                    "topic": {"type": "string"},
+                                    "message": {"type": "string"},
+                                    "follow_up_question": {"type": "string"},
+                                    "confidence": {
+                                        "type": "string",
+                                        "enum": ["high", "medium", "low"],
+                                    },
+                                    "safety_notes": {"type": "string"},
                                 },
-                                "safety_notes": {"type": "string"},
+                                "required": [
+                                    "topic",
+                                    "message",
+                                    "follow_up_question",
+                                    "confidence",
+                                    "safety_notes",
+                                ],
+                                "additionalProperties": False,
                             },
-                            "required": [
-                                "topic",
-                                "message",
-                                "follow_up_question",
-                                "confidence",
-                                "safety_notes",
-                            ],
-                            "additionalProperties": False,
-                        },
-                        instruction=build_response_instruction(chat_request.mode),
-                        prompt=build_response_user_prompt(chat_request, state),
-                        chat_request=chat_request,
-                    )
-                response = ResponseDraft(
-                    topic=self._optional_text(parsed.get("topic")) or state.get("current_topic"),
-                    message=self._clean_text(parsed.get("message"), "Let us learn one small thing together."),
-                    follow_up_question=self._optional_text(parsed.get("follow_up_question")),
-                    confidence=self._normalize_confidence(parsed.get("confidence")),
-                    safety_notes=self._clean_text(parsed.get("safety_notes"), ""),
-                    source_mode="llm",
-                )
+                            instruction=build_response_instruction(chat_request.mode),
+                            prompt=build_response_user_prompt(chat_request, state),
+                            chat_request=chat_request,
+                        )
+                        response = ResponseDraft(
+                            topic=self._optional_text(parsed.get("topic")) or state.get("current_topic"),
+                            message=self._clean_text(parsed.get("message"), "Let us learn one small thing together."),
+                            follow_up_question=self._optional_text(parsed.get("follow_up_question")),
+                            confidence=self._normalize_confidence(parsed.get("confidence")),
+                            safety_notes=self._clean_text(parsed.get("safety_notes"), ""),
+                            source_mode="llm",
+                        )
+                    else:
+                        streamed_message = await self._stream_final_response_text(
+                            chat_request=chat_request,
+                            state=state,
+                            on_delta=on_delta,
+                        )
+                        response = ResponseDraft(
+                            topic=state.get("current_topic"),
+                            message=self._clean_text(streamed_message, "Let us learn one small thing together."),
+                            follow_up_question=None,
+                            confidence="medium",
+                            safety_notes="",
+                            source_mode="llm",
+                        )
                 run.end(
                     outputs={
                         "topic": response.topic,
@@ -183,6 +201,96 @@ class ModelService:
                     }
                 )
                 return response
+
+    async def _stream_final_response_text(
+        self,
+        chat_request: ChatRequest,
+        state: AgentState,
+        on_delta: DeltaCallback,
+    ) -> str:
+        instruction = (
+            f"{build_response_instruction(chat_request.mode)}\n"
+            "Output plain text only. Do not output JSON, markdown, or code fences."
+        )
+        prompt = build_response_user_prompt(
+            chat_request=chat_request,
+            state=state,
+            include_json_contract=False,
+        )
+        human_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        image_content = self._build_image_content_from_request_or_history(chat_request, state)
+        if image_content is not None:
+            human_content.append(image_content)
+            llm = self._get_planning_vision_llm()
+        else:
+            llm = self._get_planning_text_llm()
+
+        fragments: list[str] = []
+        try:
+            async for chunk in llm.astream(
+                [
+                    SystemMessage(content=instruction),
+                    HumanMessage(content=human_content),
+                ]
+            ):
+                delta = self._extract_stream_chunk_text(chunk.content)
+                if not delta:
+                    continue
+                fragments.append(delta)
+                emitted = on_delta(delta)
+                if inspect.isawaitable(emitted):
+                    await emitted
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"LLM stream request failed: {exc}",
+            ) from exc
+        return "".join(fragments).strip()
+
+    def _build_image_content_from_request_or_history(
+        self,
+        chat_request: ChatRequest,
+        state: AgentState,
+    ) -> dict[str, Any] | None:
+        if chat_request.image_base64:
+            return {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{chat_request.image_mime_type};base64,{chat_request.image_base64}",
+                    "detail": "auto",
+                },
+            }
+        if chat_request.image_url:
+            return {
+                "type": "image_url",
+                "image_url": {"url": str(chat_request.image_url), "detail": "auto"},
+            }
+
+        history = state.get("history", [])
+        if not isinstance(history, list):
+            return None
+        for turn in reversed(history):
+            if not isinstance(turn, dict):
+                continue
+            image_base64 = turn.get("image_base64")
+            image_url = turn.get("image_url")
+            image_mime_type = turn.get("image_mime_type")
+            if isinstance(image_base64, str) and image_base64.strip():
+                if not isinstance(image_mime_type, str) or not image_mime_type.strip():
+                    continue
+                return {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{image_mime_type};base64,{image_base64}",
+                        "detail": "auto",
+                    },
+                }
+            if isinstance(image_url, str) and image_url.strip():
+                return {
+                    "type": "image_url",
+                    "image_url": {"url": image_url, "detail": "auto"},
+                }
+        return None
 
     async def _call_llm_with_tools(
         self,
@@ -426,6 +534,19 @@ class ModelService:
             return "\n".join(parts).strip()
         return ""
 
+    def _extract_stream_chunk_text(self, content: object) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+                elif isinstance(item, str):
+                    parts.append(item)
+            return "".join(parts)
+        return ""
+
     def _parse_json_from_text(self, text: str) -> dict[str, Any]:
         raw = text.strip()
         if not raw:
@@ -602,7 +723,7 @@ class ModelService:
         ]
         prompt = (
             "Compress the episodic memory batch into one concise memory item for a child-learning agent.\n"
-            "Keep core facts, progress clues, and unresolved hints.\n"
+            "Keep core facts, progress clues, and Use Chinese.\n"
             + "\n".join(prompt_lines)
         )
 
@@ -746,5 +867,3 @@ class ModelService:
 
     def decode_image_for_debug(self, image_base64: str) -> bytes:
         return base64.b64decode(image_base64, validate=True)
-
-

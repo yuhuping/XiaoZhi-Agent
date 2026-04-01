@@ -20,7 +20,6 @@ from app.services.model_service import ModelService
 from app.tools.basic_tools import BasicTools
 
 logger = logging.getLogger(__name__)
-from IPython.display import Image, display
 
 
 class AgentGraph:
@@ -63,13 +62,6 @@ class AgentGraph:
         self.graph = builder.compile()
         logger.info("agent graph compiled")
 
-        # try:# 生成graph图片时候用
-        #     png_data = self.graph.get_graph().draw_mermaid_png()
-        #     with open("graph.png", "wb") as f:
-        #         f.write(png_data)
-        #     display(Image(png_data))
-        # except Exception as e:
-        #     print(e)
 
     async def run(self, state: AgentState) -> AgentState:
         logger.info("workflow started")

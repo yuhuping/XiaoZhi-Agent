@@ -98,13 +98,12 @@ class Settings:
         or "https://api.scnet.cn/api/llm/v1"
     )
     openai_max_concurrency: int = field(
-        default_factory=lambda: _read_int(1, "LLM_MAX_CONCURRENCY", "OPENAI_MAX_CONCURRENCY")
+        default_factory=lambda: _read_int(1, "LLM_MAX_CONCURRENCY")
     )
     openai_image_request_timeout_seconds: int = field(
         default_factory=lambda: _read_int(
             120,
             "LLM_IMAGE_REQUEST_TIMEOUT_SECONDS",
-            "OPENAI_IMAGE_REQUEST_TIMEOUT_SECONDS",
         )
     )
     max_upload_image_bytes: int = field(
@@ -188,55 +187,7 @@ class Settings:
     tavily_timeout_seconds: int = field(
         default_factory=lambda: _read_int(15, "TAVILY_TIMEOUT_SECONDS")
     )
-    # @property
-    # def llm_api_key(self) -> str | None:
-    #     return self.openai_api_key
-
-    # @property
-    # def llm_model(self) -> str:
-    #     return self.openai_model
-
-    # @property
-    # def llm_planning_model(self) -> str:
-    #     return self.openai_planning_model
-
-    # @property
-    # def llm_base_url(self) -> str:
-    #     return self.openai_api_base
-
-    # @property
-    # def llm_max_concurrency(self) -> int:
-    #     return self.openai_max_concurrency
-
-    # @property
-    # def llm_image_request_timeout_seconds(self) -> int:
-    #     return self.openai_image_request_timeout_seconds
-
-    # # Backward compatibility for temporary uppercase references.
-    # @property
-    # def LLM_API_KEY(self) -> str | None:
-    #     return self.llm_api_key
-
-    # @property
-    # def LLM_MODEL(self) -> str:
-    #     return self.llm_model
-
-    # @property
-    # def LLM_PLANNING_MODEL(self) -> str:
-    #     return self.llm_planning_model
-
-    # @property
-    # def LLM_BASE_URL(self) -> str:
-    #     return self.llm_base_url
-
-    # @property
-    # def LLM_MAX_CONCURRENCY(self) -> int:
-    #     return self.llm_max_concurrency
-
-    # @property
-    # def LLM_IMAGE_REQUEST_TIMEOUT_SECONDS(self) -> int:
-    #     return self.llm_image_request_timeout_seconds
-
+    
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()

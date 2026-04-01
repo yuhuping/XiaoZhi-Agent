@@ -39,6 +39,9 @@ class MemoryUpdateNode:
             {
                 "role": "user",
                 "text": user_text,
+                "image_base64": state.get("image_base64"),
+                "image_url": state.get("image_url"),
+                "image_mime_type": state.get("image_mime_type"),
                 "topic": current_topic,
                 "asked_question": None,
                 "mode": interaction_mode,
@@ -47,6 +50,9 @@ class MemoryUpdateNode:
             {
                 "role": "assistant",
                 "text": assistant_text,
+                "image_base64": None,
+                "image_url": None,
+                "image_mime_type": None,
                 "topic": current_topic,
                 "asked_question": follow_up_question,
                 "mode": interaction_mode,
@@ -65,6 +71,9 @@ class MemoryUpdateNode:
         merged_turn = {
             "role": "dialogue_pair",
             "text": merged_text,
+            "image_base64": state.get("image_base64"),
+            "image_url": state.get("image_url"),
+            "image_mime_type": state.get("image_mime_type"),
             "topic": current_topic,
             "asked_question": follow_up_question,
             "mode": interaction_mode,

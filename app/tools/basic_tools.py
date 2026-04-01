@@ -3,7 +3,7 @@
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
@@ -13,6 +13,8 @@ from app.memory.tool import MemoryTool
 from app.rag.retriever import LocalKnowledgeRetriever
 from app.services.model_service import ModelService, ReasonDecision, ResponseDraft
 from app.tools.tavily_search import TavilySearchTool
+
+DeltaCallback = Callable[[str], Awaitable[None] | None]
 
 
 class RetrieveKnowledgeInput(BaseModel):
@@ -180,10 +182,14 @@ class BasicTools:
         request = state_to_request(state)
         return await self.model_service.reason_next_action(request, state, tools=self._langgraph_tools)
 
-    async def generate_final_response(self, state: AgentState) -> ResponseDraft:
+    async def generate_final_response(
+        self,
+        state: AgentState,
+        on_delta: DeltaCallback | None = None,
+    ) -> ResponseDraft:
         """调用回答模型生成最终回复。"""
         request = state_to_request(state)
-        return await self.model_service.generate_final_response(request, state)
+        return await self.model_service.generate_final_response(request, state, on_delta=on_delta)
 
     def run_tool(self, call: ToolCall, state: AgentState) -> ToolResult:
         """统一工具调用入口。"""

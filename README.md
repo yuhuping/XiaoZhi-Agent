@@ -1,187 +1,108 @@
-# XiaoZhi v1.2
+<div align="center">
+  <img src="app/logo.png" alt="XiaoZ Logo" width="160" style="display:block; margin:0 auto 8px;" />
 
-XiaoZhi 是一个面向儿童学习场景的多模态 Agent 原型项目。
+  <h1 style="margin: 0 0 12px;">小智Agent</h1>
 
-当前版本重点不是做一个开放式聊天机器人，而是搭建一个可运行、可观察、可扩展的工作流式 Agent 后端。项目强调显式状态、显式节点边界，以及一条稳定的教学交互链路。
+  <p>
+    <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" />
+    <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-1C3C3C?style=flat-square" alt="LangGraph" />
+    <img src="https://img.shields.io/badge/FastAPI-Web%20API-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+    <img src="https://img.shields.io/badge/Pydantic-Data%20Validation-E92063?style=flat-square&logo=pydantic&logoColor=white" alt="Pydantic" />
+    <img src="https://img.shields.io/badge/FAISS-Vector%20Search-0467DF?style=flat-square" alt="FAISS" />
+    <img src="https://img.shields.io/badge/OpenAI-LLM-412991?style=flat-square&logo=openai&logoColor=white" alt="OpenAI" />
+  </p>
 
-## 项目定位
+  <p><strong>基于 ReAct + LangGraph + RAG + Memory 的智慧教育 Agent 助手</strong></p>
+  <p>面向孩子学习陪伴，也支持家长模式与基础联网搜索能力</p>
+</div>
 
-- 面向 3 到 8 岁儿童的学习辅助 Agent
-- 支持文本输入、图片输入和图文混合输入
-- 输出短、简单、温和、带一点引导性的教学回复
-- 当前优先保证本地可运行、流程清晰、便于后续扩展
+---
 
-## 当前能力
+## ✦ 项目简介
 
-- 接收文本、图片 URL、Base64 图片
-- 基于工作流执行一次完整对话处理
-- 识别当前主题或对象
-- 根据上下文规划下一步动作
-- 生成儿童友好的解释和一个追问
-- 返回结构化响应而不是纯文本
-- 提供前端 Playground 便于本地联调
+小智 的目标不是只给出答案，而是尽量按照教学陪伴的方式组织回复：
 
-当前主链路是：
+- `教育模式`：偏引导、启发、循序渐进
+- `陪伴模式`：偏自然交流、轻陪伴
+- `家长模式`：偏实用建议、问题排查、基础信息支持
 
-1. `perception`
-2. `state_update`
-3. `planning`
-4. `action_router`
-5. `generation` 对应动作节点
-6. `response`
+当前项目技术核心包括：
 
-## 技术重点
+- `ReAct` 工作流决策
+- `LangGraph` 节点编排
+- `RAG` 本地知识检索
+- `Memory` 会话/长期记忆
+- 文本与图片输入
+- 前端流式回答展示
 
-- 后端框架：FastAPI
-- 工作流编排：LangGraph
-- 状态管理：显式 `AgentState`
-- 模型调用：兼容 OpenAI SDK 风格的 LLM API
-- 结构化输入输出：Pydantic
-- 可观测性：基础日志 + 可选 LangSmith tracing
+相关细节设计文档：
 
-项目核心不是“路由函数里直接调模型”，而是通过图结构驱动节点执行，让状态和流程在代码中可见。
+- [graph.md](/home/yhp/projects/XiaoZ/docs/architecture/graph.md)
+- [rag.md](/home/yhp/projects/XiaoZ/docs/architecture/rag.md)
+- [memory.md](/home/yhp/projects/XiaoZ/docs/architecture/memory.md)
 
-## 功能重点
+---
 
-- 儿童学习场景优先，不做开放式闲聊
-- 输出强调：
-  - 简短
-  - 易懂
-  - 鼓励式表达
-  - 一次只推进一个小学习步骤
-- 对话结果包含：
-  - `action`
-  - `message`
-  - `follow_up_question`
-  - `topic`
-  - `metadata`
-
-## 目录结构
+## ✦ 目录结构
 
 ```text
-app/
-  api/          FastAPI 路由
-  agent/        工作流图、状态、节点
-  core/         配置、日志、LangSmith
-  frontend/     本地测试页面
-  prompts/      Prompt 模板
-  schemas/      请求/响应模型
-  services/     模型调用与业务服务
-  tools/        轻量工具层
+XiaoZ/
+├── app/                  # 后端主代码
+│   ├── agent/            # LangGraph 节点与状态
+│   ├── api/              # FastAPI 路由
+│   ├── frontend/         # 简单前端页面
+│   ├── memory/           # Memory 相关实现
+│   ├── prompts/          # Prompt 模板
+│   ├── rag/              # 本地检索
+│   └── services/         # 模型/会话/业务服务
+├── KG/                   # 本地知识库素材
+├── docs/                 # 项目文档
+├── .env                  # 环境设置存放api_key
+└── requirements.txt      # Python 依赖
 
-tests/          测试
-scripts/        运行和调试脚本
 ```
 
-几个关键文件：
+---
 
-- `app/main.py`
-- `app/api/chat.py`
-- `app/api/health.py`
-- `app/agent/graph.py`
-- `app/agent/state.py`
-- `app/services/model_service.py`
-- `app/services/chat_service.py`
-- `app/frontend/index.html`
+## ✦ 环境准备
 
-## 接口说明
-
-健康检查：
-
-- `GET /health`
-
-主接口：
-
-- `POST /api/v1/chat/explain-and-ask`
-
-示例请求：
-
-```json
-{
-  "text": "Tell me about an apple.",
-  "age_hint": "4-6"
-}
+### 1. 安装依赖
 ```
-
-示例响应：
-
-```json
-{
-  "session_id": "demo-session",
-  "action": "explain_and_ask",
-  "message": "An apple is a fruit. It can be red or green.",
-  "follow_up_question": "What color apple do you like?",
-  "topic": "apple",
-  "metadata": {
-    "source_mode": "openai",
-    "confidence": "high",
-    "safety_notes": "",
-    "used_image": false,
-    "dialogue_stage": "responded",
-    "planned_action": "explain_and_ask",
-    "workflow_trace": [
-      "perception",
-      "state_update",
-      "planning",
-      "action_router",
-      "explain_and_ask",
-      "response"
-    ],
-    "input_modality": "text",
-    "route_reason": "apple topic requested"
-  }
-}
-```
-
-## 运行方式
-
-安装依赖：
-
-```powershell
 pip install -r requirements.txt
 ```
 
-启动后端：
+---
 
-```powershell
-python -m uvicorn app.main:app --reload
+### 2.环境配置必填 Key
+
+要让项目至少能正常启动并调用模型，在.env文件里面配置：
+
+```env
+LLM_API_KEY=your_api_key
+LLM_BASE_URL=https://your-llm-endpoint
+LLM_MODEL=your-text-model
+# 如果你要使用图片输入能力，建议同时配置下面这些：
+vllm_api_key=your_vision_api_key
+vllm_base_url=https://your-vision-endpoint
+vllm_model=your-vision-model
+# 联网搜索能力
+TAVILY_API_KEY=your_tavily_api_key
+TAVILY_BASE_URL=https://api.tavily.com
 ```
 
-运行测试：
 
-```powershell
-pytest
+---
+
+## ✦ 启动项目
+
+
+```bash
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-打开页面：
+---
 
-- 首页：`/`
-- 接口文档：`/docs`
+## ✦ Support
 
-## 环境变量
+如果这个项目对你有帮助，欢迎点一个 `Star` 支持一下。
 
-当前项目优先使用 `LLM_*` 配置，旧的 `OPENAI_*` 仍兼容。
-
-常用配置：
-
-- `LLM_BASE_URL`
-- `LLM_API_KEY`
-- `LLM_MODEL`
-- `LLM_PLANNING_MODEL`
-- `LLM_MAX_CONCURRENCY`
-- `LLM_IMAGE_REQUEST_TIMEOUT_SECONDS`
-- `REQUEST_TIMEOUT_SECONDS`
-- `LANGSMITH_TRACING`
-
-## 当前边界
-
-当前版本暂不追求：
-
-- 长期记忆
-- RAG / 检索增强
-- 复杂工具系统
-- 完整安全子系统
-- 流式输出
-- 生产部署优化
-
-v1.2 的目标很明确：先把 Agent 的工作流骨架、状态结构和本地演示路径立住。

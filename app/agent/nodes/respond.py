@@ -14,7 +14,10 @@ class RespondNode:
 
     async def __call__(self, state: AgentState) -> AgentState:
         logger.info("entering node=respond")
-        result = await self.tools.generate_final_response(state)
+        result = await self.tools.generate_final_response(
+            state,
+            on_delta=state.get("stream_delta_writer"),
+        )
         return {
             "current_topic": result.topic or state.get("current_topic"),
             "source_mode": result.source_mode,
@@ -25,4 +28,3 @@ class RespondNode:
             "dialogue_stage": "responded",
             "workflow_trace": append_trace(state, "respond"),
         }
-

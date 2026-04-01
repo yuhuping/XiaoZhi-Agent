@@ -13,12 +13,13 @@ def build_reason_instruction(mode: InteractionMode) -> str:
         mode_rule = "Companion mode: keep it warm and natural, answer directly when appropriate."
     else:
         mode_rule = (
-            "Parent mode: respond to guardians with practical, accurate, and concise guidance, "
-            "including concrete next steps when useful."
+            "Parent mode: Do your best to address any questions raised by the parents!"
+            "not just a child-education helper. Use a professional, friendly, and efficient tone. "
+            "Be maximally helpful!"
         )
     return textwrap.dedent(
         f"""
-        You are XiaoZhi's controlled ReAct planner for children aged 3 to 8.
+        You are XiaoZhi, an assistant designed for children ages 3 to 8 or their parents depend on follow mode.
         {mode_rule}
         Decide whether to answer directly or call one bound tool when grounding or memory lookup is needed.
         Retrieval policy:
@@ -32,10 +33,11 @@ def build_reason_instruction(mode: InteractionMode) -> str:
 
 
 def build_reason_user_prompt(chat_request: ChatRequest, state: AgentState) -> str:
+    age_band = _resolve_age_band(chat_request)
     return textwrap.dedent(
         f"""
         Mode: {chat_request.mode}
-        Age band: {chat_request.age_hint or "3-8"}
+        Age band: {age_band}
         User text: {(chat_request.text or "").strip() or "No text provided."}
         Has image: {"yes" if chat_request.image_base64 or chat_request.image_url else "no"}
         Current topic: {state.get("current_topic") or state.get("topic_hint") or "unknown"}
@@ -56,12 +58,14 @@ def build_response_instruction(mode: InteractionMode) -> str:
         mode_rule = "Companion mode: respond naturally and warmly, follow-up question is optional."
     else:
         mode_rule = (
-            "Parent mode: use a professional but friendly tone, keep replies concise and practical, "
-            "and avoid child-directed wording."
+            "Parent mode: act as a capable personal assistant for the parent or caregiver, "
+            "not just a child-education helper. Use a professional, friendly, and efficient tone. "
+            "Prioritize direct answers, practical suggestions, clear reasoning, and actionable next steps. "
+            "Be maximally helpful within safety limits, and avoid child-directed wording unless explicitly needed."
         )
     return textwrap.dedent(
         f"""
-        You are XiaoZhi, a child-facing assistant for ages 3 to 8.
+        You are XiaoZhi, an assistant designed for children ages 3 to 8 or their parents depend on follow mode.
         {mode_rule}
         Keep response short, safe, warm, and clear.
         Avoid adult, unsafe, manipulative, or scary content.
@@ -70,11 +74,16 @@ def build_response_instruction(mode: InteractionMode) -> str:
     ).strip()
 
 
-def build_response_user_prompt(chat_request: ChatRequest, state: AgentState) -> str:
-    return textwrap.dedent(
+def build_response_user_prompt(
+    chat_request: ChatRequest,
+    state: AgentState,
+    include_json_contract: bool = True,
+) -> str:
+    age_band = _resolve_age_band(chat_request)
+    base_prompt = textwrap.dedent(
         f"""
         Mode: {chat_request.mode}
-        Age band: {chat_request.age_hint or "3-8"}
+        Age band: {age_band}
         User text: {(chat_request.text or "").strip() or "No text provided."}
         Current topic: {state.get("current_topic") or "unknown"}
         ReAct decision: {state.get("react_decision") or "none"}
@@ -82,25 +91,28 @@ def build_response_user_prompt(chat_request: ChatRequest, state: AgentState) -> 
         Observation summary: {state.get("observation_summary") or "none"}
         Retrieved context:
         {_format_retrieved_chunks(state)}
-        short_Memory:
-        {state.get("short_Memory") or {}}
         Memory:
         {state.get("Memory") or {}}
         Recent history:
         {_format_history(state)}
-
-        Return JSON:
-        - topic: short noun phrase or empty string
-        - message: final child-friendly reply
-        - follow_up_question: one short question or empty string
-        - confidence: high | medium | low
-        - safety_notes: short string, empty if no issue
         """
     ).strip()
+    if not include_json_contract:
+        return base_prompt
+    return (
+        f"{base_prompt}\n\n"
+        "Return JSON:\n"
+        "- topic: short noun phrase or empty string\n"
+        "- message: final child-friendly reply\n"
+        "- follow_up_question: one short question or empty string\n"
+        "- confidence: high | medium | low\n"
+        "- safety_notes: short string, empty if no issue"
+    )
 
 
 def _format_history(state: AgentState) -> str:
     history = state.get("history", [])
+    # print(f'debug: history={history}')
     if not history:
         return "No prior turns."
     lines = []
@@ -109,6 +121,12 @@ def _format_history(state: AgentState) -> str:
         text = turn.get("text", "")
         lines.append(f"- {role}: {text}")
     return "\n".join(lines)
+
+
+def _resolve_age_band(chat_request: ChatRequest) -> str:
+    if chat_request.mode == "parent":
+        return "成年人"
+    return chat_request.age_hint or "3-8"
 
 
 def _format_retrieved_chunks(state: AgentState) -> str:

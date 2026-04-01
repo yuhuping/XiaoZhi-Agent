@@ -1,4 +1,5 @@
 ﻿import logging
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from fastapi import Request
@@ -26,6 +27,14 @@ class ChatService:
 
     async def explain_and_ask(self, request: ChatRequest) -> ChatResponse:
         """执行一次对话请求。"""
+        return await self.explain_and_ask_stream(request=request, on_delta=None)
+
+    async def explain_and_ask_stream(
+        self,
+        request: ChatRequest,
+        on_delta: Callable[[str], Awaitable[None] | None] | None,
+    ) -> ChatResponse:
+        """执行一次对话请求，可选逐段回调。"""
         settings = self.model_service.settings
         with tracing_context(
             enabled=is_langsmith_enabled(settings),
@@ -44,6 +53,7 @@ class ChatService:
                 metadata={"endpoint": "/api/v1/chat/explain-and-ask"},
             ) as run:
                 state = build_initial_state(request)
+                state["stream_delta_writer"] = on_delta
                 state["rag_enabled"] = settings.rag_enabled
                 final_state = await self.graph.run(state=state)
                 response = ChatResponse.model_validate(final_state["final_response"])

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal, TypedDict
+from typing import Any, Awaitable, Callable, Literal, TypedDict
 from uuid import uuid4
 
 from app.schemas.chat import ActType, ChatRequest, InputModality, InteractionMode
@@ -18,6 +18,7 @@ DialogueStage = Literal[
 ConversationRole = Literal["user", "assistant"]
 SourceMode = Literal["llm"]
 ConfidenceLevel = Literal["high", "medium", "low"]
+StreamDeltaWriter = Callable[[str], Awaitable[None] | None]
 DEFAULT_CHILD_PROFILE_ID = "default_child"
 DEFAULT_PARENT_PROFILE_ID = "default_parent"
 # 按模式映射默认画像ID，避免家长模式写入儿童画像。
@@ -31,6 +32,9 @@ DEFAULT_PROFILE_ID_BY_MODE: dict[InteractionMode, str] = {
 class ConversationTurn(TypedDict, total=False):
     role: ConversationRole
     text: str
+    image_base64: str | None
+    image_url: str | None
+    image_mime_type: str | None
     topic: str | None
     asked_question: str | None
     mode: InteractionMode
@@ -81,6 +85,7 @@ class AgentState(TypedDict, total=False):
     memory_written_types: list[str]
     memory_consolidated_count: int
     memory_forgotten_count: int
+    stream_delta_writer: StreamDeltaWriter | None
     final_response: dict[str, Any]
     workflow_trace: list[str]
     messages: list[Any]
@@ -151,6 +156,7 @@ def build_initial_state(request: ChatRequest, session_id: str | None = None) -> 
         "memory_written_types": [],
         "memory_consolidated_count": 0,
         "memory_forgotten_count": 0,
+        "stream_delta_writer": None,
         "final_response": {},
         "workflow_trace": [],
         "messages": [],

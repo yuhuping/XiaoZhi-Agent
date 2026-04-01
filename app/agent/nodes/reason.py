@@ -34,8 +34,7 @@ class ReasonNode:
                 tool_input["query"] = state.get("latest_user_text") or state.get("user_input") or ""
         elif decision_act == "read_memory":
             selected_tool = selected_tool or "read_memory_bundle"
-            tool_input.setdefault("session_id", state["session_id"])
-            tool_input.setdefault("profile_id", state["profile_id"])
+            tool_input = self._build_memory_tool_input(state)
         else:
             selected_tool = None
             tool_input = {}
@@ -67,4 +66,11 @@ class ReasonNode:
             "dialogue_stage": "reasoned",
             "messages": [ai_message],
             "workflow_trace": append_trace(state, "chatbot"),
+        }
+
+    def _build_memory_tool_input(self, state: AgentState) -> dict[str, str]:
+        # Memory tool IDs are system context, so we never trust model-generated overrides here.
+        return {
+            "session_id": state["session_id"],
+            "profile_id": state["profile_id"],
         }

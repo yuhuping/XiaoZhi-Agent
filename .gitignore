@@ -33,7 +33,16 @@ Thumbs.db
 
 .tmp-codex-home/
 .tmp-codex-home-no-parent/
+
+/KG/*
+!/KG/*.txt
+*.PDF
+*.pdf
+
 data/
 *.sqlite3
 
+
 tests/
+tasks/
+scripts/
