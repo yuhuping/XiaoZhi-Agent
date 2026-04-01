@@ -37,9 +37,9 @@
 
 相关细节设计文档：
 
-- [graph.md](/home/yhp/projects/XiaoZ/docs/architecture/graph.md)
-- [rag.md](/home/yhp/projects/XiaoZ/docs/architecture/rag.md)
-- [memory.md](/home/yhp/projects/XiaoZ/docs/architecture/memory.md)
+- [graph.md](./docs/architecture/graph.md)
+- [rag.md](./docs/architecture/rag.md)
+- [memory.md](./docs/architecture/memory.md)
 
 ---
 
