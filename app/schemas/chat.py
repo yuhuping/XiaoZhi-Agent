@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 InputModality = Literal["text", "image", "multimodal"]
 InteractionMode = Literal["education", "companion", "parent"]
-ActType = Literal["direct", "retrieve_knowledge", "read_memory"]
+ActType = Literal["direct", "retrieve_knowledge", "tavily_search", "read_memory", "skill"]
 ConfidenceLevel = Literal["high", "medium", "low"]
 
 

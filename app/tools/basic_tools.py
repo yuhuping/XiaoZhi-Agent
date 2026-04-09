@@ -14,13 +14,22 @@ from app.rag.retriever import LocalKnowledgeRetriever
 from app.services.model_service import ModelService, ReasonDecision, ResponseDraft
 from app.tools.tavily_search import TavilySearchTool
 
+# 延迟导入避免循环依赖
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.skills.registry import SkillRegistry
+
 DeltaCallback = Callable[[str], Awaitable[None] | None]
 
 
 class RetrieveKnowledgeInput(BaseModel):
     """知识检索输入。"""
 
-    query: str = Field(description="User question to search in local KG.")
+    query: str = Field(
+        description="Search query for local knowledge base. "
+        "Provide 2-3 semantically equivalent phrasings separated by ||| "
+        "(e.g. 'why is panda a treasure|||panda national treasure reason|||why protect pandas').",
+    )
     top_k: int = Field(default=3, ge=1, le=8)
     min_score: float | None = Field(default=None, ge=0)
 
@@ -65,10 +74,12 @@ class BasicTools:
         model_service: ModelService,
         memory_tool: MemoryTool,
         retriever: LocalKnowledgeRetriever,
+        skill_registry: "SkillRegistry | None" = None,
     ) -> None:
         self.model_service = model_service
         self.memory_tool = memory_tool
         self.retriever = retriever
+        self.skill_registry = skill_registry
         self.tavily = TavilySearchTool(
             api_key=model_service.settings.tavily_api_key,
             base_url=model_service.settings.tavily_base_url,
@@ -78,9 +89,19 @@ class BasicTools:
         )
         self._langgraph_tools = self._build_langgraph_tools()
 
-    def as_langgraph_tools(self) -> list[StructuredTool]:
-        """导出给LangGraph使用的工具列表。"""
-        return self._langgraph_tools
+    def as_langgraph_tools(self, mode: str | None = None) -> list[StructuredTool]:
+        """导出给LangGraph使用的工具列表，按 mode 过滤 skill tools。"""
+        base = list(self._langgraph_tools)
+        if self.skill_registry:
+            base.extend(self.skill_registry.get_tools(mode=mode))
+        return base
+
+    def as_all_langgraph_tools(self) -> list[StructuredTool]:
+        """导出全量工具列表（不按 mode 过滤），供 ToolNode 注册。"""
+        base = list(self._langgraph_tools)
+        if self.skill_registry:
+            base.extend(self.skill_registry.get_all_tools())
+        return base
 
     def _build_langgraph_tools(self) -> list[StructuredTool]:
         """构建LangGraph工具定义。"""
@@ -88,7 +109,8 @@ class BasicTools:
             StructuredTool.from_function(
                 func=self._langgraph_retrieve_knowledge,
                 name="retrieve_knowledge",
-                description="Retrieve children's encyclopedic facts from local knowledge base.",
+                description="Retrieve children's encyclopedic facts from local knowledge base. "
+                "Provide 2-3 semantically equivalent phrasings separated by |||.",
                 args_schema=RetrieveKnowledgeInput,
             ),
             StructuredTool.from_function(
@@ -111,8 +133,36 @@ class BasicTools:
         top_k: int = 3,
         min_score: float | None = None,
     ) -> str:
-        """LangGraph知识检索包装。"""
-        result = self._retrieve_knowledge(query=query, top_k=top_k, min_score=min_score)
+        """LangGraph知识检索包装：按 ||| 分隔多查询，合并去重结果。"""
+        raw_queries = [q.strip() for q in query.split("|||") if q.strip()]
+        if not raw_queries:
+            raw_queries = [query]
+        # debug用
+        # print(f'原始查询分解为 {len(raw_queries)} 个子查询: {raw_queries}')
+        if self.model_service.settings.rag_multi_query_enabled:
+            sub_queries = raw_queries
+        else:
+            sub_queries = raw_queries[:1]
+        seen_ids: set[str] = set()
+        merged: list[dict] = []
+        base_result: dict = {}
+        for q in sub_queries:
+            r = self._retrieve_knowledge(query=q, top_k=top_k, min_score=min_score)
+            if not base_result:
+                base_result = r
+            for chunk in r.get("results", []):
+                cid = str(chunk.get("chunk_id") or "")
+                if cid not in seen_ids:
+                    seen_ids.add(cid)
+                    merged.append(chunk)
+        merged.sort(key=lambda x: float(x.get("score") or 0), reverse=True)
+        result = {
+            **base_result,
+            "query": query,
+            "expanded_queries": sub_queries,
+            "results": merged[:top_k],
+            "used_rag": bool(merged),
+        }
         return json.dumps(result, ensure_ascii=False)
 
     def _langgraph_tavily_search(self, query: str, top_k: int = 3) -> str:
@@ -180,7 +230,9 @@ class BasicTools:
     async def reason_next_action(self, state: AgentState) -> ReasonDecision:
         """调用规划模型选择下一步动作。"""
         request = state_to_request(state)
-        return await self.model_service.reason_next_action(request, state, tools=self._langgraph_tools)
+        mode = state.get("interaction_mode", "education")
+        tools = self.as_langgraph_tools(mode=mode)
+        return await self.model_service.reason_next_action(request, state, tools=tools)
 
     async def generate_final_response(
         self,
@@ -195,15 +247,14 @@ class BasicTools:
         """统一工具调用入口。"""
         if call.name == "retrieve_knowledge":
             query = str(call.args.get("query") or state.get("latest_user_text") or "").strip()
-            result = self._retrieve_knowledge(
-                query=query,
-                top_k=int(call.args.get("top_k") or self.model_service.settings.rag_top_k),
-                min_score=(
-                    float(call.args["min_score"])
-                    if "min_score" in call.args and call.args["min_score"] is not None
-                    else None
-                ),
+            top_k = int(call.args.get("top_k") or self.model_service.settings.rag_top_k)
+            min_score = (
+                float(call.args["min_score"])
+                if "min_score" in call.args and call.args["min_score"] is not None
+                else None
             )
+            raw = self._langgraph_retrieve_knowledge(query=query, top_k=top_k, min_score=min_score)
+            result = json.loads(raw)
             return ToolResult(tool_name="retrieve_knowledge", success=True, data=result)
 
         if call.name == "tavily_search":

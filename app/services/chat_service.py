@@ -13,6 +13,7 @@ from app.memory import MemoryConfig, MemoryManager, MemoryTool
 from app.rag.retriever import LocalKnowledgeRetriever
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.model_service import ModelService
+from app.skills import SkillRegistry
 from app.tools.basic_tools import BasicTools
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,6 @@ def create_chat_service() -> ChatService:
     """创建聊天服务及其依赖。"""
     logger.info("initializing chat service")
     settings = get_settings()
-    model_service = ModelService(settings)
 
     memory_db = Path(settings.memory_db_path)
     if settings.memory_reset_on_start and memory_db.exists():
@@ -91,13 +91,19 @@ def create_chat_service() -> ChatService:
         chunk_overlap=settings.rag_chunk_overlap,
         auto_refresh_interval_seconds=settings.rag_refresh_interval_seconds,
     )
+    skill_registry = SkillRegistry(
+        skills_dir="app/skills",
+        deps={"memory_manager": memory_manager},
+    )
+    model_service = ModelService(settings=settings, skill_registry=skill_registry)
     tools = BasicTools(
         model_service=model_service,
         memory_tool=memory_tool,
         retriever=retriever,
+        skill_registry=skill_registry,
     )
     service = ChatService(
-        graph=AgentGraph(model_service=model_service, tools=tools),
+        graph=AgentGraph(model_service=model_service, tools=tools, skill_registry=skill_registry),
         model_service=model_service,
     )
     logger.info("chat service initialized")

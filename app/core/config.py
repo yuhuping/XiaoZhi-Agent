@@ -19,10 +19,22 @@ def _load_local_dotenv() -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key, value)
+        os.environ[key] = value
 
 
 _load_local_dotenv()
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> "Settings":
+    return Settings()
+
+
+def reload_settings() -> "Settings":
+    """重新读取 .env 并刷新 Settings 缓存（热重载时使用）。"""
+    _load_local_dotenv()
+    get_settings.cache_clear()
+    return get_settings()
 
 
 def _read_bool(name: str, default: bool) -> bool:
@@ -126,6 +138,7 @@ class Settings:
     # RAG相关参数
     kg_dir: str = field(default_factory=lambda: os.getenv("KG_DIR", str(ROOT_DIR / "KG")))
     rag_enabled: bool = field(default_factory=lambda: _read_bool("RAG_ENABLED", True))
+    rag_multi_query_enabled: bool = field(default_factory=lambda: _read_bool("RAG_MULTI_QUERY_ENABLED", True))
     rag_top_k: int = field(default_factory=lambda: _read_int(3, "RAG_TOP_K"))
     rag_min_score: float = field(default_factory=lambda: _read_float(0.08, "RAG_MIN_SCORE"))
     rag_chunk_size: int = field(default_factory=lambda: _read_int(520, "RAG_CHUNK_SIZE"))
@@ -188,6 +201,3 @@ class Settings:
         default_factory=lambda: _read_int(15, "TAVILY_TIMEOUT_SECONDS")
     )
     
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    return Settings()

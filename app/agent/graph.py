@@ -27,6 +27,7 @@ class AgentGraph:
         self,
         model_service: ModelService,
         tools: BasicTools,
+        skill_registry=None,
     ) -> None:
         self.settings = model_service.settings
         builder = StateGraph(AgentState)
@@ -34,8 +35,8 @@ class AgentGraph:
         builder.add_node("understand", UnderstandNode(tools))
         builder.add_node("state_update", StateUpdateNode(tools))
         builder.add_node("chatbot", ReasonNode(tools))
-        builder.add_node("tools", ToolNode(tools=tools.as_langgraph_tools(), messages_key="messages"))
-        builder.add_node("observe", ObserveNode())
+        builder.add_node("tools", ToolNode(tools=tools.as_all_langgraph_tools(), messages_key="messages"))
+        builder.add_node("observe", ObserveNode(skill_registry=skill_registry))
         builder.add_node("respond", RespondNode(tools))
         builder.add_node("memory_update", MemoryUpdateNode(tools))
         builder.add_node("response", ResponseNode())

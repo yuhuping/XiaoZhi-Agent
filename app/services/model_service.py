@@ -60,8 +60,9 @@ class ResponseDraft:
 
 
 class ModelService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, skill_registry=None) -> None:
         self.settings = settings
+        self.skill_registry = skill_registry
         self._openai_call_semaphore = asyncio.Semaphore(max(1, settings.openai_max_concurrency))
         self._text_client: OpenAI | None = None
         self._vision_client: OpenAI | None = None
@@ -208,15 +209,47 @@ class ModelService:
         state: AgentState,
         on_delta: DeltaCallback,
     ) -> str:
-        instruction = (
-            f"{build_response_instruction(chat_request.mode)}\n"
-            "Output plain text only. Do not output JSON, markdown, or code fences."
-        )
-        prompt = build_response_user_prompt(
-            chat_request=chat_request,
-            state=state,
-            include_json_contract=False,
-        )
+        # Skill 专属 prompt 路径：skill 自己提供 instruction 和 user prompt
+        if state.get("selected_act") == "skill" and self.skill_registry:
+            skill = self.skill_registry.find_skill_by_tool_name(state.get("selected_tool"))
+            if skill:
+                skill_instruction = skill.get_response_instruction()
+                skill_prompt = skill.get_response_user_prompt(state)
+                instruction = skill_instruction or (
+                    f"{build_response_instruction(chat_request.mode)}\n"
+                    "Output plain text only. Do not output JSON, markdown, or code fences."
+                )
+                prompt = skill_prompt or build_response_user_prompt(
+                    chat_request=chat_request,
+                    state=state,
+                    include_json_contract=False,
+                )
+                # logger.info(
+                #     "[skill_respond] tool=%r instruction=%r prompt_preview=%r",
+                #     state.get("selected_tool"),
+                #     instruction[:120],
+                #     prompt[:300],
+                # )
+            else:
+                instruction = (
+                    f"{build_response_instruction(chat_request.mode)}\n"
+                    "Output plain text only. Do not output JSON, markdown, or code fences."
+                )
+                prompt = build_response_user_prompt(
+                    chat_request=chat_request,
+                    state=state,
+                    include_json_contract=False,
+                )
+        else:
+            instruction = (
+                f"{build_response_instruction(chat_request.mode)}\n"
+                "Output plain text only. Do not output JSON, markdown, or code fences."
+            )
+            prompt = build_response_user_prompt(
+                chat_request=chat_request,
+                state=state,
+                include_json_contract=False,
+            )
         human_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         image_content = self._build_image_content_from_request_or_history(chat_request, state)
         if image_content is not None:
@@ -633,10 +666,19 @@ class ModelService:
         return tool_name, tool_args
 
     def _select_act_from_tool(self, tool_name: str | None) -> ActType:
-        if tool_name in {"retrieve_knowledge", "tavily_search"}:
+        if tool_name == "retrieve_knowledge":
+            logger.info("[reason_route] tool=%r -> act=retrieve_knowledge (local_rag)", tool_name)
             return "retrieve_knowledge"
+        if tool_name == "tavily_search":
+            logger.info("[reason_route] tool=%r -> act=tavily_search (web_search)", tool_name)
+            return "tavily_search"
         if tool_name == "read_memory_bundle":
+            logger.info("[reason_route] tool=%r -> act=read_memory", tool_name)
             return "read_memory"
+        if tool_name is not None:
+            logger.info("[reason_route] tool=%r -> act=skill", tool_name)
+            return "skill"
+        logger.info("[reason_route] tool=None -> act=direct")
         return "direct"
 
     def _build_route_reason(

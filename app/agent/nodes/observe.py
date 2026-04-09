@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class ObserveNode:
+    def __init__(self, skill_registry=None) -> None:
+        self.skill_registry = skill_registry
+
     async def __call__(self, state: AgentState) -> AgentState:
         logger.info("entering node=observe")
         selected_act = state.get("selected_act", "direct")
@@ -22,6 +25,12 @@ class ObserveNode:
         if selected_act == "retrieve_knowledge":
             chunks = last_tool_payload.get("results", [])
             summary = f"retrieved {len(chunks)} chunks via {state.get('selected_tool') or 'tool'}"
+            updates["retrieved_chunks"] = chunks if isinstance(chunks, list) else []
+            updates["tool_result"] = last_tool_payload
+            updates["tool_success"] = bool(last_tool_payload.get("tool_success", False))
+        elif selected_act == "tavily_search":
+            chunks = last_tool_payload.get("results", [])
+            summary = f"retrieved {len(chunks)} web results via {state.get('selected_tool') or 'tool'}"
             updates["retrieved_chunks"] = chunks if isinstance(chunks, list) else []
             updates["tool_result"] = last_tool_payload
             updates["tool_success"] = bool(last_tool_payload.get("tool_success", False))
@@ -41,6 +50,20 @@ class ObserveNode:
             )
             updates["tool_result"] = last_tool_payload
             updates["tool_success"] = bool(last_tool_payload.get("tool_success", False))
+        elif selected_act == "skill":
+            skill = (
+                self.skill_registry.find_skill_by_tool_name(state.get("selected_tool"))
+                if self.skill_registry
+                else None
+            )
+            if skill:
+                skill_updates = skill.observe_result(last_tool_payload)
+                updates.update(skill_updates)
+                summary = str(skill_updates.get("observation_summary", "skill executed"))
+            else:
+                summary = "skill execution skipped: skill not found in registry"
+                updates["tool_result"] = last_tool_payload
+                updates["tool_success"] = False
         else:
             summary = "no external tool used"
             updates["tool_result"] = {}

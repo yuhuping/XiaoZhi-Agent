@@ -228,6 +228,17 @@ class SQLiteMemoryStore:
                 result[key] = int(row["cnt"])
         return result
 
+    def list_distinct_user_ids(self) -> list[str]:
+        """返回 memory_items 表中所有不重复的 user_id。"""
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT user_id FROM memory_items WHERE archived=0"
+            ).fetchall()
+        finally:
+            conn.close()
+        return [str(row["user_id"]) for row in rows]
+
     def _row_to_item(self, row: sqlite3.Row) -> MemoryItem:
         """行数据转记忆对象。"""
         metadata = self._load_json(row["metadata"])

@@ -537,13 +537,15 @@
           </select>
         </div>
 
-        <div class="field">
-          <label for="age-hint">年龄段</label>
+        <div class="field" id="age-hint-field">
+          <label for="age-hint">年龄</label>
           <select id="age-hint">
-            <option value="3-5">3-5</option>
-            <option value="3-8" selected>3-8</option>
-            <option value="4-6">4-6</option>
-            <option value="6-8">6-8</option>
+            <option value="3">3岁</option>
+            <option value="4">4岁</option>
+            <option value="5" selected>5岁</option>
+            <option value="6">6岁</option>
+            <option value="7">7岁</option>
+            <option value="8">8岁</option>
           </select>
         </div>
 
@@ -614,9 +616,12 @@
       parent: "default_parent",
     };
 
+    const DEFAULT_AGE_HINT = "5";
+
     const elements = {
       text: document.getElementById("text-input"),
       ageHint: document.getElementById("age-hint"),
+      ageHintField: document.getElementById("age-hint-field"),
       modeSelect: document.getElementById("mode-select"),
       templateSelect: document.getElementById("template-select"),
       sessionId: document.getElementById("session-id"),
@@ -799,7 +804,7 @@
       const payload = {
         text: elements.text.value.trim() || undefined,
         mode: elements.modeSelect.value,
-        age_hint: elements.ageHint.value,
+        age_hint: elements.ageHint.value || undefined,
         session_id: sessionId,
         profile_id: elements.profileId.value.trim() || undefined,
       };
@@ -1010,8 +1015,9 @@
       if (templateName === "text-only") {
         elements.text.value = "Tell me about an apple in a simple way.";
         elements.modeSelect.value = "education";
-        elements.ageHint.value = "4-6";
+        elements.ageHint.value = DEFAULT_AGE_HINT;
         syncProfileIdWithMode();
+        syncAgeHintWithMode();
         renderPreview();
         setStatus("准备就绪", "文本模板已加载。");
         return;
@@ -1020,9 +1026,10 @@
       if (templateName === "text-plus-image") {
         elements.text.value = "What is in this picture? Please explain it simply.";
         elements.modeSelect.value = "education";
-        elements.ageHint.value = "3-8";
+        elements.ageHint.value = DEFAULT_AGE_HINT;
         elements.imageUrl.value = "https://ts1.tc.mm.bing.net/th/id/OIP-C.z3qX0zn2LVe8g6vgxVRWrQAAAA?w=193&h=135&c=8&rs=1&qlt=90&o=6&pid=3.1&rm=2";
         syncProfileIdWithMode();
+        syncAgeHintWithMode();
         renderPreview();
         setStatus("准备就绪", "图文模板已加载。");
       }
@@ -1185,9 +1192,18 @@
       applyTemplate(event.target.value);
     });
 
+    function syncAgeHintWithMode() {
+      const isParent = elements.modeSelect.value === "parent";
+      elements.ageHintField.style.display = isParent ? "none" : "";
+      if (!isParent && !elements.ageHint.value) elements.ageHint.value = DEFAULT_AGE_HINT;
+    }
+
     elements.modeSelect.addEventListener("change", () => {
       syncProfileIdWithMode();
+      syncAgeHintWithMode();
     });
+
+    syncAgeHintWithMode();
 
     elements.sessionId.addEventListener("input", () => {
       const value = elements.sessionId.value.trim();
