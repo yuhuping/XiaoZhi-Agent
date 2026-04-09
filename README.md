@@ -37,9 +37,9 @@
 
 相关细节设计文档：
 
-- [graph.md](/home/yhp/projects/XiaoZ/docs/architecture/graph.md)
-- [rag.md](/home/yhp/projects/XiaoZ/docs/architecture/rag.md)
-- [memory.md](/home/yhp/projects/XiaoZ/docs/architecture/memory.md)
+- [graph.md](./docs/architecture/graph.md)
+- [rag.md](./docs/architecture/rag.md)
+- [memory.md](./docs/architecture/memory.md)
 
 ---
 
@@ -75,7 +75,7 @@ pip install -r requirements.txt
 
 ### 2.环境配置必填 Key
 
-要让项目至少能正常启动并调用模型，在.env文件里面配置：
+要让项目至少能正常启动并调用模型，请将.env.example重命名为.env文件并配置：
 
 ```env
 LLM_API_KEY=your_api_key
