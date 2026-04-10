@@ -60,7 +60,6 @@ class ReasonNode:
             "topic_hint": decision.topic_hint or state.get("topic_hint"),
             "current_topic": state.get("current_topic") or decision.topic_hint,
             "confidence": decision.confidence,
-            "source_mode": decision.source_mode,
             "dialogue_stage": "reasoned",
             "messages": [ai_message],
             "workflow_trace": append_trace(state, "chatbot"),

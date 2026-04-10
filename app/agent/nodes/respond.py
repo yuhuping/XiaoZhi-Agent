@@ -20,7 +20,6 @@ class RespondNode:
         )
         return {
             "current_topic": result.topic or state.get("current_topic"),
-            "source_mode": result.source_mode,
             "confidence": result.confidence,
             "safety_notes": result.safety_notes,
             "message_draft": result.message,

@@ -16,7 +16,6 @@ DialogueStage = Literal[
     "responded",
 ]
 ConversationRole = Literal["user", "assistant"]
-SourceMode = Literal["llm"]
 ConfidenceLevel = Literal["high", "medium", "low"]
 StreamDeltaWriter = Callable[[str], Awaitable[None] | None]
 DEFAULT_CHILD_PROFILE_ID = "default_child"
@@ -48,7 +47,6 @@ class AgentState(TypedDict, total=False):
     user_input: str
     latest_user_text: str | None
     text_input: str | None
-    normalized_text: str
     image_base64: str | None
     image_url: str | None
     image_mime_type: str | None
@@ -56,7 +54,6 @@ class AgentState(TypedDict, total=False):
     interaction_mode: InteractionMode
     child_age_band: str
     current_topic: str | None
-    detected_object: str | None
     topic_hint: str | None
     dialogue_stage: DialogueStage
     perception_signals: list[str]
@@ -79,7 +76,6 @@ class AgentState(TypedDict, total=False):
     follow_up_question: str | None
     confidence: ConfidenceLevel
     safety_notes: str
-    source_mode: SourceMode
     memory_session_updated: bool
     memory_profile_updated: bool
     memory_written_types: list[str]
@@ -124,7 +120,7 @@ def build_initial_state(request: ChatRequest, session_id: str | None = None) -> 
         "user_input": normalized_text,
         "latest_user_text": normalized_text or None,
         "text_input": request.text,
-        "normalized_text": normalized_text.lower(),
+
         "image_base64": request.image_base64,
         "image_url": str(request.image_url) if request.image_url else None,
         "image_mime_type": request.image_mime_type,
@@ -139,7 +135,6 @@ def build_initial_state(request: ChatRequest, session_id: str | None = None) -> 
         "follow_up_question": None,
         "confidence": "medium",
         "safety_notes": "",
-        "source_mode": "llm",
         "react_decision": "respond_directly",
         "selected_act": "direct",
         "selected_tool": None,

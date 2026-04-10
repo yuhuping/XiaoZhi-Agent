@@ -45,7 +45,7 @@ class ResponseNode:
                 forgotten_count=int(state.get("memory_forgotten_count", 0)),
             ),
             metadata=ChatMetadata(
-                source_mode=state.get("source_mode", "llm"),
+                source_mode="llm",
                 confidence=state.get("confidence", "medium"),
                 safety_notes=state.get("safety_notes", ""),
                 used_image=bool(state.get("image_base64") or state.get("image_url")),

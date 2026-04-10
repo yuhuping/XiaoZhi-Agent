@@ -18,7 +18,6 @@ class UnderstandNode:
         signals = self.tools.perceive_signals(state)
         return {
             "current_topic": topic_hint,
-            "detected_object": topic_hint,
             "topic_hint": topic_hint,
             "perception_signals": signals,
             "dialogue_stage": "understood",

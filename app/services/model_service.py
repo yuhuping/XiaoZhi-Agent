@@ -33,7 +33,6 @@ from app.schemas.chat import ActType, ChatRequest, ConfidenceLevel
 
 logger = logging.getLogger(__name__)
 
-SourceMode = Literal["llm"]
 DeltaCallback = Callable[[str], Awaitable[None] | None]
 
 
@@ -46,7 +45,6 @@ class ReasonDecision:
     route_reason: str
     topic_hint: str | None
     confidence: ConfidenceLevel
-    source_mode: SourceMode
 
 
 @dataclass(frozen=True)
@@ -56,7 +54,6 @@ class ResponseDraft:
     follow_up_question: str | None
     confidence: ConfidenceLevel
     safety_notes: str
-    source_mode: SourceMode
 
 
 class ModelService:
@@ -110,7 +107,6 @@ class ModelService:
                     route_reason=route_reason,
                     topic_hint=self._infer_topic_hint(chat_request, state),
                     confidence="medium",
-                    source_mode="llm",
                 )
                 run.end(
                     outputs={
@@ -178,7 +174,6 @@ class ModelService:
                             follow_up_question=self._optional_text(parsed.get("follow_up_question")),
                             confidence=self._normalize_confidence(parsed.get("confidence")),
                             safety_notes=self._clean_text(parsed.get("safety_notes"), ""),
-                            source_mode="llm",
                         )
                     else:
                         streamed_message = await self._stream_final_response_text(
@@ -192,7 +187,6 @@ class ModelService:
                             follow_up_question=None,
                             confidence="medium",
                             safety_notes="",
-                            source_mode="llm",
                         )
                 run.end(
                     outputs={
