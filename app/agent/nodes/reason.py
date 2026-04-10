@@ -50,6 +50,15 @@ class ReasonNode:
             selected_tool=selected_tool,
             tool_input=tool_input,
         )
+        react_iteration = state.get("react_iteration", 0) + 1
+        react_history_entry = {
+            "iteration": react_iteration,
+            "thought": decision.decision,
+            "action": selected_tool,
+            "action_input": tool_input,
+        }
+        react_history = [*state.get("react_history", []), react_history_entry]
+
         ai_message = AIMessage(content=decision.decision, tool_calls=tool_calls)
         return {
             "react_decision": decision.decision,
@@ -63,6 +72,8 @@ class ReasonNode:
             "dialogue_stage": "reasoned",
             "messages": [ai_message],
             "workflow_trace": append_trace(state, "chatbot"),
+            "react_iteration": react_iteration,
+            "react_history": react_history,
         }
 
     def _override_act_from_selected_tool(self, decision_act: ActType, selected_tool: str | None) -> ActType:

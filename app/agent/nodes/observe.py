@@ -72,11 +72,17 @@ class ObserveNode:
         workflow_trace = state.get("workflow_trace", [])
         if selected_act != "direct" and "tools" not in workflow_trace:
             workflow_trace = [*workflow_trace, "tools"]
+        # Append observation to the latest react_history entry
+        react_history = list(state.get("react_history", []))
+        if react_history:
+            react_history[-1] = {**react_history[-1], "observation": summary}
+
         updates.update(
             {
                 "observation_summary": summary,
                 "dialogue_stage": "observed",
                 "workflow_trace": [*workflow_trace, "observe"],
+                "react_history": react_history,
             }
         )
         return updates
