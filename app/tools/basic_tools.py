@@ -243,6 +243,16 @@ class BasicTools:
         request = state_to_request(state)
         return await self.model_service.generate_final_response(request, state, on_delta=on_delta)
 
+    async def generate_plan(self, state: AgentState) -> dict[str, Any]:
+        from app.agent.state import state_to_request
+        chat_request = state_to_request(state)
+        return await self.model_service.generate_plan(chat_request, state)
+
+    async def execute_plan(self, state: AgentState, on_delta=None) -> str:
+        from app.agent.state import state_to_request
+        chat_request = state_to_request(state)
+        return await self.model_service.execute_plan(chat_request, state, on_delta=on_delta)
+
     def run_tool(self, call: ToolCall, state: AgentState) -> ToolResult:
         """统一工具调用入口。"""
         if call.name == "retrieve_knowledge":

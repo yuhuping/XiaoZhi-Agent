@@ -23,6 +23,12 @@ from openai import OpenAI
 from app.agent.state import AgentState
 from app.core.config import Settings
 from app.core.langsmith import is_langsmith_enabled
+from app.prompts.plan_prompts import (
+    build_execute_instruction,
+    build_execute_user_prompt,
+    build_plan_instruction,
+    build_plan_user_prompt,
+)
 from app.prompts.tutor_prompts import (
     build_reason_instruction,
     build_reason_user_prompt,
@@ -196,6 +202,85 @@ class ModelService:
                     }
                 )
                 return response
+
+    async def generate_plan(self, chat_request: ChatRequest, state: AgentState) -> dict[str, Any]:
+        """Generate a plan for education mode. Returns {"steps": [...], "needs_retrieval": bool, "retrieval_query": str}."""
+        with tracing_context(
+            enabled=is_langsmith_enabled(self.settings),
+            project_name=self.settings.langsmith_project,
+        ):
+            with trace(
+                "generate_plan",
+                run_type="chain",
+                inputs={"text": chat_request.text or "", "mode": chat_request.mode},
+                metadata={"component": "model_service"},
+            ) as run:
+                async with self._openai_call_semaphore:
+                    try:
+                        parsed = self._call_llm_json(
+                            model=self.settings.llm_model,
+                            schema_name="xiaozhi_plan",
+                            schema={
+                                "type": "object",
+                                "properties": {
+                                    "steps": {"type": "array", "items": {"type": "string"}},
+                                    "needs_retrieval": {"type": "boolean"},
+                                    "retrieval_query": {"type": "string"},
+                                },
+                                "required": ["steps", "needs_retrieval", "retrieval_query"],
+                                "additionalProperties": False,
+                            },
+                            instruction=build_plan_instruction(),
+                            prompt=build_plan_user_prompt(chat_request, state),
+                            chat_request=chat_request,
+                        )
+                    except Exception:
+                        logger.warning("generate_plan: LLM JSON parse failed, falling back to single step")
+                        parsed = {"steps": ["直接回答用户问题"], "needs_retrieval": False, "retrieval_query": ""}
+                    steps = parsed.get("steps") or ["直接回答用户问题"]
+                    if not isinstance(steps, list) or len(steps) == 0:
+                        steps = ["直接回答用户问题"]
+                    result = {
+                        "steps": steps[:5],
+                        "needs_retrieval": bool(parsed.get("needs_retrieval", False)),
+                        "retrieval_query": str(parsed.get("retrieval_query", "")),
+                    }
+                    run.end(outputs={"step_count": len(result["steps"]), "needs_retrieval": result["needs_retrieval"]})
+                    return result
+
+    async def execute_plan(
+        self,
+        chat_request: ChatRequest,
+        state: AgentState,
+        on_delta: DeltaCallback | None = None,
+    ) -> str:
+        """Execute a plan by streaming the solution. Returns the full text."""
+        instruction = build_execute_instruction()
+        prompt = build_execute_user_prompt(chat_request, state)
+        human_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        image_content = self._build_image_content_from_request_or_history(chat_request, state)
+        if image_content is not None:
+            human_content.append(image_content)
+            llm = self._get_planning_vision_llm()
+        else:
+            llm = self._get_planning_text_llm()
+
+        fragments: list[str] = []
+        async for chunk in llm.astream(
+            [
+                SystemMessage(content=instruction),
+                HumanMessage(content=human_content),
+            ]
+        ):
+            delta = self._extract_stream_chunk_text(chunk.content)
+            if not delta:
+                continue
+            fragments.append(delta)
+            if on_delta:
+                emitted = on_delta(delta)
+                if inspect.isawaitable(emitted):
+                    await emitted
+        return "".join(fragments).strip()
 
     async def _stream_final_response_text(
         self,
