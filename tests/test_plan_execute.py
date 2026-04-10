@@ -110,3 +110,18 @@ class TestExecuteNode:
 
         assert result["execution_result"] == "答案是42。"
         assert result["message_draft"] == "答案是42。"
+
+
+class TestPlanNodeFallback:
+    def test_plan_fallback_on_empty_steps(self) -> None:
+        """If generate_plan returns empty steps, PlanNode should fallback."""
+        fake_plan = {"steps": [], "needs_retrieval": False, "retrieval_query": ""}
+        tools = AsyncMock()
+        tools.generate_plan = AsyncMock(return_value=fake_plan)
+        node = PlanNode(tools)
+        state = _make_state()
+
+        result = asyncio.run(node(state))
+
+        assert result["selected_act"] == "direct"
+        assert len(result["plan_steps"]) >= 1  # at least fallback step
