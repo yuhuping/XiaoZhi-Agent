@@ -85,6 +85,12 @@ class AgentState(TypedDict, total=False):
     final_response: dict[str, Any]
     workflow_trace: list[str]
     messages: list[Any]
+    plan_steps: list[str]
+    plan_raw: str
+    execution_result: str
+    react_iteration: int
+    react_max_iterations: int
+    react_history: list[dict[str, Any]]
 
 
 def resolve_default_profile_id(mode: InteractionMode) -> str:
@@ -155,6 +161,12 @@ def build_initial_state(request: ChatRequest, session_id: str | None = None) -> 
         "final_response": {},
         "workflow_trace": [],
         "messages": [],
+        "plan_steps": [],
+        "plan_raw": "",
+        "execution_result": "",
+        "react_iteration": 0,
+        "react_max_iterations": 3,
+        "react_history": [],
     }
 
 
