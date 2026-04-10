@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock
 
+from app.agent.nodes.execute import ExecuteNode
 from app.agent.nodes.plan import PlanNode
 
 
@@ -74,3 +75,38 @@ class TestPlanNode:
         assert result["selected_act"] == "direct"
         assert result["selected_tool"] is None
         assert result["messages"][0].tool_calls == []
+
+
+class TestExecuteNode:
+    def test_execute_streams_and_writes_result(self) -> None:
+        """ExecuteNode should call execute_plan with stream_delta_writer and write execution_result."""
+        tools = AsyncMock()
+        tools.execute_plan = AsyncMock(return_value="第一步：3+5=8。答案是8。")
+        node = ExecuteNode(tools)
+        delta_writer = AsyncMock()
+        state = _make_state(
+            plan_steps=["计算3+5"],
+            stream_delta_writer=delta_writer,
+        )
+
+        result = asyncio.run(node(state))
+
+        tools.execute_plan.assert_called_once()
+        assert result["execution_result"] == "第一步：3+5=8。答案是8。"
+        assert result["message_draft"] == "第一步：3+5=8。答案是8。"
+        assert result["dialogue_stage"] == "responded"
+
+    def test_execute_without_stream_writer(self) -> None:
+        """ExecuteNode works even when stream_delta_writer is None."""
+        tools = AsyncMock()
+        tools.execute_plan = AsyncMock(return_value="答案是42。")
+        node = ExecuteNode(tools)
+        state = _make_state(
+            plan_steps=["回答问题"],
+            stream_delta_writer=None,
+        )
+
+        result = asyncio.run(node(state))
+
+        assert result["execution_result"] == "答案是42。"
+        assert result["message_draft"] == "答案是42。"
