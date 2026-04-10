@@ -30,6 +30,48 @@
 
 # v1.6
 
+## Graph 节点示意图
+
+```
+┌─────────────────────── Top-level Router Graph ───────────────────────┐
+│                                                                      │
+│  START → understand → state_update ─┬─ route_by_mode ──┐            │
+│                                     │                   │            │
+│         ┌───────────────────────────┘                   │            │
+│         │ education                          parent /   │            │
+│         ▼                                   companion   │            │
+│  ┌─ PlanExecute Subgraph ──────┐      ┌─ ReAct Subgraph ─────────┐ │
+│  │                              │      │                           │ │
+│  │  plan ─┬─ plan_route ──┐    │      │  reason ─┬─ tools_cond ─┐│ │
+│  │        │               │    │      │    ▲     │              ││ │
+│  │        │ retrieve      │    │      │    │     │ has_tool     ││ │
+│  │        ▼               │    │      │    │     ▼              ││ │
+│  │     tools → observe    │    │      │    │   tools → observe  ││ │
+│  │              │         │    │      │    │            │        ││ │
+│  │              │ direct  │    │      │    │ should_    │        ││ │
+│  │              ▼         ▼    │      │    │ continue   ▼        ││ │
+│  │           execute ──► END   │      │    └── react ◄─┘        ││ │
+│  │                              │      │                  │ direct││ │
+│  └──────────────────────────────┘      │                  ▼      ││ │
+│         │                              │   respond ──► END  ◄───┘│ │
+│         │                              │                          │ │
+│         │                              └──────────────────────────┘ │
+│         │                                       │                    │
+│         └──────────────┬────────────────────────┘                    │
+│                        ▼                                             │
+│                  memory_update → response → memory_compact → END     │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+PlanExecute 路径 (education):
+  understand → state_update → plan → [tools → observe →] execute → memory_update → response → memory_compact → END
+  LLM 调用: plan(1次) + execute(1次) = 最多 2 次
+
+ReAct 路径 (parent/companion):
+  understand → state_update → reason ⇄ tools → observe (循环 max 3 轮) → respond → memory_update → response → memory_compact → END
+  LLM 调用: reason(每轮1次) + respond(1次) = 最多 4 次
+```
+
 ## 2026-04-10
 - 今天做了什么：完成 v1.6 双框架重构。顶层 Router Graph 按 `interaction_mode` 分发：education → PlanExecute 子图（PlanNode 生成步骤 + 可选 RAG 检索 + ExecuteNode 流式输出解题过程），parent/companion → ReAct 子图（多轮 reason→tools→observe 循环，max_iterations=3）。清理 AgentState 无用字段（`normalized_text`、`detected_object`、`source_mode`），新增 `plan_steps`、`execution_result`、`react_iteration`、`react_history` 等 6 个字段。新增 3 个测试文件覆盖子图路由、Plan 生成/降级、ReAct 迭代终止。全部 18 个测试通过。
 - 下一个 session 启动时先看什么：手工验证 education 模式数学题的流式解题体验，以及 parent 模式多轮搜索是否正常工作。
