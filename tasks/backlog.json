@@ -1,0 +1,70 @@
+{
+  "version": "v1.6",
+  "todo": [],
+  "in_progress": [],
+  "done": [
+    {
+      "id": "v1.6-state-cleanup",
+      "title": "清理无用 state 字段",
+      "priority": "P0",
+      "status": "done",
+      "summary": "删除 AgentState 中未使用的字段（normalized_text、detected_object、source_mode），简化 dataclass 和节点返回值。"
+    },
+    {
+      "id": "v1.6-plan-execute-subgraph",
+      "title": "PlanExecute 子图（education 模式）",
+      "priority": "P0",
+      "status": "done",
+      "summary": "PlanNode 通过 LLM JSON 调用生成步骤列表和检索决策，可选经 ToolNode/ObserveNode 进行 RAG 检索，ExecuteNode 流式输出解题过程。最多 2 次 LLM 调用。"
+    },
+    {
+      "id": "v1.6-react-loop",
+      "title": "多轮 ReAct 循环（parent/companion 模式）",
+      "priority": "P0",
+      "status": "done",
+      "summary": "ReasonNode 和 ObserveNode 新增 react_iteration 和 react_history 追踪，支持 reason→tools→observe 多轮循环，max_iterations=3。should_continue_react 条件边控制终止。"
+    },
+    {
+      "id": "v1.6-router-graph",
+      "title": "顶层 Router Graph",
+      "priority": "P0",
+      "status": "done",
+      "summary": "重写 graph.py，顶层 Router Graph 按 interaction_mode 分发：education → PlanExecute 子图，parent/companion → ReAct 子图。共享 understand、state_update、memory_update、response、memory_compact 节点。"
+    },
+    {
+      "id": "v1.5-parent-summary-tool",
+      "title": "家长侧摘要生成工具（Skill 插件架构）",
+      "priority": "P0",
+      "status": "done",
+      "summary": "建立 Skill 插件架构（app/skills/*/skill.yaml 约定目录自动扫描，SkillRegistry 按 mode 过滤注入 bind_tools）。新增 generate_parent_summary skill：_execute() 从 SQLite 读取指定孩子全量 episodic + semantic 记忆（无 LLM），skill 自带 response prompt，respond 节点 SSE 流式生成结构化中文摘要。支持多孩子 child_name 模糊匹配 + fallback default_child。新增 ActType='skill'，observe/model_service 分支处理 skill 结果。"
+    },
+    {
+      "id": "v1.5-rag-multi-query-plus",
+      "title": "RAG 多查询扩展 Plus（Tool Description ||| 分隔多查询）",
+      "priority": "P1",
+      "status": "done",
+      "summary": "Tool description 引导 LLM 在 query: str 中用 ||| 分隔输出 2-3 个语义等价子查询。_langgraph_retrieve_knowledge 按 ||| split 后遍历检索、去重合并，无需额外 LLM 调用。"
+    },
+    {
+      "id": "v1.5-rag-multi-query",
+      "title": "RAG 多查询扩展",
+      "priority": "P0",
+      "status": "done",
+      "summary": "act_retrieve 节点中，调用 LLM 将用户原始 query 改写为 2-3 个语义等价子查询，各自独立检索后按 chunk_id 去重、按 score 降序合并，返回最终 top-k 结果。"
+    },
+    {
+      "id": "v1.4-sse-chat-streaming",
+      "title": "SSE Chat Streaming",
+      "priority": "P0",
+      "status": "done",
+      "summary": "后端主对话接口改为 text/event-stream，前端改为逐段渲染 assistant 文本。"
+    },
+    {
+      "id": "v1.4-original-image-pass-through",
+      "title": "Original Image Pass-through",
+      "priority": "P1",
+      "status": "done",
+      "summary": "明确并保持图片原图透传策略，不引入图片摘要字段。"
+    }
+  ]
+}
