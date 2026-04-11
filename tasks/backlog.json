@@ -4,6 +4,20 @@
   "in_progress": [],
   "done": [
     {
+      "id": "fix-respond-json-mode-empty-message",
+      "title": "respond 节点非流式路径 json_mode 空 message 修复",
+      "priority": "P1",
+      "status": "done",
+      "summary": "在 generate_final_response 非流式分支用 try/except 包裹 _call_llm_json，message 为空时 fallback 到新增的 _invoke_response_plain（直接 llm.ainvoke，无 json_mode），修复 qwen-plus-2025-07-28 下结构化输出 message 字段为空的兜底问题。"
+    },
+    {
+      "id": "fix-reason-read-memory-prompt",
+      "title": "reason 节点补充跨会话记忆召回引导",
+      "priority": "P0",
+      "status": "done",
+      "summary": "在 tutor_prompts.build_reason_instruction 的 read_memory_bundle 描述中加入强制规则：当用户询问自己偏好/历史且 Memory 为空且 history 无先前轮次时，MUST 先调用 read_memory_bundle，修复 NM-01b/NM-04b 跨会话召回失败。"
+    },
+    {
       "id": "v1.6-state-cleanup",
       "title": "清理无用 state 字段",
       "priority": "P0",

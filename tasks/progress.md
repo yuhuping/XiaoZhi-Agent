@@ -79,3 +79,8 @@ ReAct 路径 (parent/companion):
 ## 2026-04-11
 - 今天做了什么：三项并行改进。① **结构化输出重构**：新增 `app/schemas/llm_outputs.py`（`PlanResult`、`ReactResponse`、`EpisodicSummary`、`TopicSummary`），`ModelService._call_llm_json` 从手写 JSON schema dict + 原始 OpenAI client 改为 Pydantic + `langchain_openai with_structured_output(method="json_mode")`，删除 `_text_client`、`_vision_client`、`_build_payload`、`_build_schema_instruction`、`_parse_json_from_text` 等样板。② **ReAct 链路可观测性**：`chat_service`、`reason`、`observe`、`respond`、`basic_tools` 各节点统一增加结构化 `logger.info`（前缀 `[chat_request]`/`[react_reason_*]`/`[react_observe]`/`[react_respond]`/`[react_tool_start]`），同时在 `model_service` 中对 reason/response 两处 prompt 调用 `_dump_debug_json` 写调试文件。③ **Prompt 优化**：`plan_prompts` 细化 RAG 触发策略（动物/植物/自然科学明确强制 `needs_retrieval=true`）；`tutor_prompts` 在 reason user prompt 注入 `selected_act`/`selected_tool`/`tool_success`/`observation_summary`/`react_history`，新增工具去重指导（同一工具不重复调用）；新增 `check.md` 含 T01–T15 共 15 条手工验收测试用例。
 - 下一个 session 启动时先看什么：按 `check.md` T01–T15 手工跑一遍，重点验 T02/T03（RAG 触发）和 T09（Tavily 搜索）。
+
+## 2026-04-11（makeorder）
+- 已完成并归档：`fix-reason-read-memory-prompt`、`fix-respond-json-mode-empty-message`（共 2 项）
+- 仍待处理：无
+- 下一个 session 启动时先看什么：todo 已清空，可按 check.md NM-01b/NM-04b 重新跑验收，确认跨会话召回修复生效。
