@@ -84,3 +84,8 @@ ReAct 路径 (parent/companion):
 - 已完成并归档：`fix-reason-read-memory-prompt`、`fix-respond-json-mode-empty-message`（共 2 项）
 - 仍待处理：无
 - 下一个 session 启动时先看什么：todo 已清空，可按 check.md NM-01b/NM-04b 重新跑验收，确认跨会话召回修复生效。
+
+## 2026-04-11（第二轮修复）
+- 今天做了什么：根据第二轮验收报告（check_results.md）补全 respond 节点修复。① `ReactResponse.message` 默认值从兜底字符串改为 `""`（llm_outputs.py），使 plain invoke fallback 能够正确触发；② read_memory 工具触发机制已在第一轮修复中验证生效（NM-01b/NM-04b workflow_trace 含 tools + chatbot 2 次迭代）。
+- 仍待处理：无
+- 下一个 session 启动时先看什么：todo 已清空，建议跑第三轮验收确认 NM-01b/NM-02b/NM-04b message 内容正确（不再为兜底值）。

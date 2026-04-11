@@ -9,7 +9,7 @@ class ReactResponse(BaseModel):
     """respond 节点（ReAct 子图）的 LLM 结构化输出。"""
 
     topic: str = ""
-    message: str = "Let us learn one small thing together."
+    message: str = ""
     follow_up_question: str = ""
     confidence: Literal["high", "medium", "low"] = "medium"
     safety_notes: str = ""
