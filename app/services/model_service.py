@@ -173,18 +173,38 @@ class ModelService:
             ) as run:
                 async with self._openai_call_semaphore:
                     if on_delta is None:
-                        result = self._call_llm_json(
-                            model_class=ReactResponse,
-                            instruction=build_response_instruction(chat_request.mode),
-                            prompt=build_response_user_prompt(chat_request, state),
-                            chat_request=chat_request,
-                        )
+                        instruction = build_response_instruction(chat_request.mode)
+                        prompt = build_response_user_prompt(chat_request, state)
+                        raw_message = ""
+                        topic_hint: str | None = None
+                        follow_up: str | None = None
+                        confidence_val: ConfidenceLevel = "medium"
+                        safety_notes_val = ""
+                        try:
+                            result = self._call_llm_json(
+                                model_class=ReactResponse,
+                                instruction=instruction,
+                                prompt=prompt,
+                                chat_request=chat_request,
+                            )
+                            raw_message = result.message or ""
+                            topic_hint = self._optional_text(result.topic)
+                            follow_up = self._optional_text(result.follow_up_question)
+                            confidence_val = self._normalize_confidence(result.confidence)
+                            safety_notes_val = self._clean_text(result.safety_notes, "")
+                        except Exception as exc:
+                            logger.warning("[generate_final_response] _call_llm_json failed: %s", exc)
+                        if not raw_message.strip():
+                            logger.warning(
+                                "[generate_final_response] json_mode returned empty message, falling back to plain invoke"
+                            )
+                            raw_message = await self._invoke_response_plain(chat_request, instruction, prompt)
                         response = ResponseDraft(
-                            topic=self._optional_text(result.topic) or state.get("current_topic"),
-                            message=self._clean_text(result.message, "Let us learn one small thing together."),
-                            follow_up_question=self._optional_text(result.follow_up_question),
-                            confidence=self._normalize_confidence(result.confidence),
-                            safety_notes=self._clean_text(result.safety_notes, ""),
+                            topic=topic_hint or state.get("current_topic"),
+                            message=self._clean_text(raw_message, "Let us learn one small thing together."),
+                            follow_up_question=follow_up,
+                            confidence=confidence_val,
+                            safety_notes=safety_notes_val,
                         )
                     else:
                         streamed_message = await self._stream_final_response_text(
@@ -498,6 +518,35 @@ class ModelService:
                     }
                 )
                 return response
+
+    async def _invoke_response_plain(self, chat_request: ChatRequest, instruction: str, prompt: str) -> str:
+        """Fallback: plain llm.ainvoke without json_mode when structured output returns empty message."""
+        is_vision = bool(chat_request.image_base64 or chat_request.image_url)
+        llm = self._get_planning_vision_llm() if is_vision else self._get_planning_text_llm()
+        user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        if chat_request.image_base64:
+            user_content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{chat_request.image_mime_type};base64,{chat_request.image_base64}",
+                        "detail": "auto",
+                    },
+                }
+            )
+        elif chat_request.image_url:
+            user_content.append(
+                {"type": "image_url", "image_url": {"url": str(chat_request.image_url), "detail": "auto"}}
+            )
+        try:
+            response = await llm.ainvoke(
+                [SystemMessage(content=instruction), HumanMessage(content=user_content)]
+            )
+            if isinstance(response, AIMessage):
+                return self._extract_ai_text(response)
+        except Exception as exc:
+            logger.warning("[_invoke_response_plain] plain invoke failed: %s", exc)
+        return ""
 
     def _call_llm_json(
         self,

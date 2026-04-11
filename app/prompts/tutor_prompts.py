@@ -20,7 +20,7 @@ def build_reason_instruction(mode: InteractionMode) -> str:
         "Tool policy:",
         "- retrieve_knowledge: use for stable educational facts and non-time-sensitive knowledge.",
         "- tavily_search: use for recent, time-sensitive, current-event, or future information.",
-        "- read_memory_bundle: use when the user references a past session, asks about previous learning history, or context clearly requires cross-session memory.",
+        "- read_memory_bundle: MUST call when the user asks about their own preferences, past behavior, things they have said/liked/done before, or any cross-session history — AND current Memory is empty AND Recent history has no prior turns. Do NOT guess or fabricate answers from an empty context; always fetch memory first.",
         "Temporal policy:",
         "- For weather/news/current-event requests with relative time words (today, tonight, tomorrow), prefer tavily_search.",
         "- Interpret relative time against current local datetime, not memory history.",

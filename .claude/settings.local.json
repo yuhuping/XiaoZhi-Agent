@@ -1,14 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m py_compile app/agent/nodes/act_retrieve.py app/services/model_service.py)",
-      "Bash(python3 -m py_compile app/agent/nodes/act_retrieve.py app/services/model_service.py)",
-      "Bash(python3 -m pytest tests/ -x -q)",
-      "Bash(.venv/bin/pytest tests/ -x -q)",
-      "Bash(python3 -m py_compile app/tools/basic_tools.py app/services/model_service.py)",
-      "Bash(python3 -m py_compile app/core/config.py)",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('tool_names:', d['tool_names']\\); print\\('mode in prompt:', d['human_content'][0]['text'][:200]\\)\")",
-      "Bash(python3:*)"
+      "Bash(*)",
+      "Read(//home/yhp/.claude/**)",
+      "Edit(/.claude/skills/makeorder/**)"
+    ],
+    "deny": [
+      "Bash(git push *)"
+    ],
+    "additionalDirectories": [
+      "/home/yhp/projects/XiaoZ/.claude/skills",
+      "/home/yhp/projects/XiaoZ/.claude/skills/triage-tasks"
     ]
   }
 }

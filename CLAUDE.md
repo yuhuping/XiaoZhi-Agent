@@ -18,7 +18,7 @@ pytest
 pytest tests/test_memory_update_node.py -v
 ```
 
-The project venv is at `./venv` (not `.venv`).
+The project venv is at `.venv`.
 
 ## Architecture
 

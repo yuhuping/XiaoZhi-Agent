@@ -343,3 +343,158 @@ curl -N -X POST http://127.0.0.1:8000/api/v1/chat/explain-and-ask-stream \
 | T13 | education | 极短输入 | 不崩溃，引导澄清 |
 | T14 | education | 混合语言 | 中文回答，逻辑正常 |
 | T15 | companion | ReAct 迭代上限 | `reason` 出现次数 ≤ 3 |
+
+---
+
+## 六、按需记忆读取功能验收（v1.7 新功能）
+
+> **背景：** 原来跨会话历史全部注入上下文，导致 `read_memory_bundle` 工具形同虚设。
+> 现已改为：`companion`/`parent` 模式启动时 `Memory={}` 空载，LLM 按需调用工具拉取跨会话记忆；`education` 模式仍自动注入 profile 记忆。
+> 以下用例使用独立 profile_id `nm-test-child` / `nm-test-parent` 隔离数据。
+
+---
+
+### NM-01a 跨会话记忆写入（companion，session A）
+
+```json
+{
+  "text": "我叫小明，我最喜欢的颜色是蓝色！",
+  "mode": "companion",
+  "age_hint": "6",
+  "session_id": "nm-sess-A",
+  "profile_id": "nm-test-child"
+}
+```
+
+**观察点：**
+- `memory.session_updated == true`（当前 session 写入成功）
+- `memory.written_types` 非空
+- 正常有回复
+
+---
+
+### NM-01b 跨会话记忆召回（companion，session B，同 profile_id）
+
+> 必须在 NM-01a 之后执行，使用不同 session_id 但同一 profile_id
+
+```json
+{
+  "text": "你知道我最喜欢什么颜色吗？",
+  "mode": "companion",
+  "age_hint": "6",
+  "session_id": "nm-sess-B",
+  "profile_id": "nm-test-child"
+}
+```
+
+**观察点：**
+- `react.selected_act == 'read_memory'`（主动调工具拉取跨会话记忆）
+- `'tools' in workflow_trace`
+- 回答包含「蓝」（成功从 profile 记忆中找到颜色偏好）
+
+---
+
+### NM-02a 当前会话记忆写入（companion，session C）
+
+```json
+{
+  "text": "我的名字叫小花，今天学会了画画！",
+  "mode": "companion",
+  "age_hint": "6",
+  "session_id": "nm-same-01",
+  "profile_id": "nm-test-child-2"
+}
+```
+
+**观察点：**
+- `memory.session_updated == true`
+- 正常有回复
+
+---
+
+### NM-02b 当前会话回忆（同 session，应从上下文直接回答，不调工具）
+
+> 与 NM-02a 使用完全相同的 session_id
+
+```json
+{
+  "text": "你还记得我的名字吗？",
+  "mode": "companion",
+  "age_hint": "6",
+  "session_id": "nm-same-01",
+  "profile_id": "nm-test-child-2"
+}
+```
+
+**观察点：**
+- `react.selected_act == 'direct'`（无需调工具，short_Memory 已含当前 session 历史）
+- `'tools' not in workflow_trace`
+- 回答包含「小花」
+
+---
+
+### NM-03 Education 模式 profile 记忆自动注入（不触发工具）
+
+> 沿用 nm-test-child profile（NM-01a 已写入数据），用全新 session_id
+
+```json
+{
+  "text": "蜗牛是什么动物？",
+  "mode": "education",
+  "age_hint": "6",
+  "session_id": "nm-edu-new",
+  "profile_id": "nm-test-child"
+}
+```
+
+**观察点：**
+- `'plan' in workflow_trace`（走 education 路径）
+- workflow_trace 中**无** `chatbot`（说明 education 模式不走 ReAct，Memory 已自动注入）
+- 正常有回复
+
+---
+
+### NM-04 Parent 模式跨会话必须调工具
+
+> 先建立一些 parent profile 数据，再新 session 查询
+
+**NM-04a（写入，session P1）：**
+```json
+{
+  "text": "我的孩子叫小宝，今年4岁，最近在学认字。",
+  "mode": "parent",
+  "age_hint": "4",
+  "session_id": "nm-parent-A",
+  "profile_id": "nm-test-parent"
+}
+```
+
+**NM-04b（读取，session P2，新 session 同 profile）：**
+```json
+{
+  "text": "你还记得我孩子叫什么名字吗？",
+  "mode": "parent",
+  "age_hint": "4",
+  "session_id": "nm-parent-B",
+  "profile_id": "nm-test-parent"
+}
+```
+
+**观察点（NM-04b）：**
+- `react.selected_act == 'read_memory'`（parent 模式跨 session 也必须调工具）
+- `'tools' in workflow_trace`
+- 回答包含「小宝」
+
+---
+
+## 按需记忆功能总结
+
+| 编号 | 模式 | 场景 | 预期行为 |
+|------|------|------|---------|
+| NM-01a | companion | 写入跨 session 记忆 | session_updated=true |
+| NM-01b | companion | 跨 session 召回 | selected_act=read_memory，回答含「蓝」 |
+| NM-02a | companion | 写入当前 session | session_updated=true |
+| NM-02b | companion | 同 session 回忆 | 无工具调用，直接从上下文回答「小花」 |
+| NM-03 | education | profile 自动注入 | 走 plan 路径，无 chatbot 节点 |
+| NM-04a | parent | 写入跨 session 记忆 | session_updated=true |
+| NM-04b | parent | 跨 session 召回 | selected_act=read_memory，回答含「小宝」 |
