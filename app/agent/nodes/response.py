@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 class ResponseNode:
     async def __call__(self, state: AgentState) -> AgentState:
-        logger.info("entering node=response")
         workflow_trace = append_trace(state, "response")
         sources = [
             GroundingSource(

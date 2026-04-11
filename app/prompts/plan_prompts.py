@@ -7,28 +7,30 @@ from app.schemas.chat import ChatRequest
 
 
 def build_plan_instruction() -> str:
+    # 节点：plan（PlanExecute 子图）
+    # 每次 education 模式请求调用一次，生成解题步骤并决定是否需要 RAG 检索。
     return textwrap.dedent("""\
         You are XiaoZhi, an educational assistant for children ages 3-8.
         Analyze the user's question and create an internal solving plan.
 
-        Output ONLY valid JSON with this exact structure:
-        {
-          "steps": ["step 1 description", "step 2 description", ...],
-          "needs_retrieval": true or false,
-          "retrieval_query": "search query if needs_retrieval is true, else empty string"
-        }
-
         Rules:
         - Maximum 5 steps. Simple questions need only 1-2 steps.
         - Each step is a concise instruction for how to explain/solve this part.
-        - Set needs_retrieval=true ONLY if the question requires looking up factual knowledge (e.g., science facts, animal/plant info, history).
-        - For pure math, logic, or casual chat, set needs_retrieval=false.
-        - retrieval_query should be a short, focused search phrase in the same language as the question.
+        - Retrieval policy — set needs_retrieval=true for ANY of these topics:
+          * Animals or plants: body structure, behavior, habitat, classification, life cycle, diet
+          * Nature science: why/how questions about natural phenomena, ecosystems, biology
+          * The knowledge base contains detailed animal and plant content (十万个为什么).
+            Always prefer retrieval for animal/plant questions to give accurate, grounded answers.
+          * Other factual lookups: history facts, geography, human body, astronomy
+        - Set needs_retrieval=false ONLY for: pure math, logic puzzles, casual chat, or simple greetings.
+        - When in doubt about animal or plant topics, always set needs_retrieval=true.
+        - retrieval_query should be a short, focused noun phrase in the same language as the question.
         - Do NOT include a "give final answer" step — that is handled separately.
     """).strip()
 
 
 def build_plan_user_prompt(chat_request: ChatRequest, state: AgentState) -> str:
+    # 节点：plan（PlanExecute 子图）
     return textwrap.dedent(f"""\
         User question: {(chat_request.text or "").strip() or "No text provided."}
         Age: {chat_request.age_hint or "3-8"}
@@ -38,6 +40,8 @@ def build_plan_user_prompt(chat_request: ChatRequest, state: AgentState) -> str:
 
 
 def build_execute_instruction() -> str:
+    # 节点：execute（PlanExecute 子图）
+    # 每次 education 模式请求调用一次，流式生成面向儿童的解答内容。
     return textwrap.dedent("""\
         You are XiaoZhi, a warm and encouraging educational assistant for children ages 3-8.
         You have been given a step-by-step plan to explain/solve a question.
@@ -53,6 +57,7 @@ def build_execute_instruction() -> str:
 
 
 def build_execute_user_prompt(chat_request: ChatRequest, state: AgentState) -> str:
+    # 节点：execute（PlanExecute 子图）
     steps_text = "\n".join(
         f"  {i+1}. {step}" for i, step in enumerate(state.get("plan_steps", []))
     )

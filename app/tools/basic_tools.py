@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
@@ -20,6 +21,8 @@ if TYPE_CHECKING:
     from app.skills.registry import SkillRegistry
 
 DeltaCallback = Callable[[str], Awaitable[None] | None]
+
+logger = logging.getLogger(__name__)
 
 
 class RetrieveKnowledgeInput(BaseModel):
@@ -255,6 +258,13 @@ class BasicTools:
 
     def run_tool(self, call: ToolCall, state: AgentState) -> ToolResult:
         """统一工具调用入口。"""
+        should_log = self._should_log_react_tool(call=call, state=state)
+        if should_log:
+            logger.info(
+                "[react_tool_start] tool=%s args=%s",
+                call.name,
+                self._summarize_value(call.args),
+            )
         if call.name == "retrieve_knowledge":
             query = str(call.args.get("query") or state.get("latest_user_text") or "").strip()
             top_k = int(call.args.get("top_k") or self.model_service.settings.rag_top_k)
@@ -265,7 +275,9 @@ class BasicTools:
             )
             raw = self._langgraph_retrieve_knowledge(query=query, top_k=top_k, min_score=min_score)
             result = json.loads(raw)
-            return ToolResult(tool_name="retrieve_knowledge", success=True, data=result)
+            tool_result = ToolResult(tool_name="retrieve_knowledge", success=True, data=result)
+            self._log_tool_result(tool_result, enabled=should_log)
+            return tool_result
 
         if call.name == "tavily_search":
             query = str(call.args.get("query") or state.get("latest_user_text") or "").strip()
@@ -273,23 +285,29 @@ class BasicTools:
                 query=query,
                 top_k=int(call.args.get("top_k") or self.model_service.settings.tavily_max_results),
             )
-            return ToolResult(
+            tool_result = ToolResult(
                 tool_name="tavily_search",
                 success=bool(result.get("tool_success", False)),
                 data=result,
                 error=result.get("error"),
             )
+            self._log_tool_result(tool_result, enabled=should_log)
+            return tool_result
 
         if call.name in {"read_memory_bundle", "read_session_memory", "read_profile_memory", "memory_execute"}:
             result = self._run_memory_tool(call=call, state=state)
-            return ToolResult(
+            tool_result = ToolResult(
                 tool_name=call.name,
                 success=bool(result.get("success", False)),
                 data=result.get("data", {}),
                 error=result.get("error"),
             )
+            self._log_tool_result(tool_result, enabled=should_log)
+            return tool_result
 
-        return ToolResult(tool_name=call.name, success=False, data={}, error="Unknown tool name.")
+        tool_result = ToolResult(tool_name=call.name, success=False, data={}, error="Unknown tool name.")
+        self._log_tool_result(tool_result, enabled=should_log)
+        return tool_result
 
     def _run_memory_tool(self, call: ToolCall, state: AgentState) -> dict[str, Any]:
         """运行memory工具：兼容旧调用名。"""
@@ -310,7 +328,8 @@ class BasicTools:
             action = str(call.args.get("action") or "").strip()
             kwargs = dict(call.args.get("kwargs") or {})
             kwargs.setdefault("user_id", user_id)
-            kwargs.setdefault("session_id", session_id)
+            if action in {"add", "search", "summary", "remove"}:
+                kwargs.setdefault("session_id", session_id)
             return self.memory_tool.execute(action, **kwargs)
         return {"success": False, "data": {}, "error": f"unsupported memory call: {call.name}"}
 
@@ -419,3 +438,32 @@ class BasicTools:
         if any(token in cleaned for token in ("because", "因为", "我觉得", "it is", "它是")):
             return True
         return word_count <= 5 or len(cleaned) <= 10
+
+    def _log_tool_result(self, result: ToolResult, enabled: bool) -> None:
+        if not enabled:
+            return
+        logger.info(
+            "[react_tool_end] tool=%s success=%s error=%r data=%s",
+            result.tool_name,
+            result.success,
+            result.error,
+            self._summarize_value(result.data),
+        )
+
+    def _should_log_react_tool(self, call: ToolCall, state: AgentState) -> bool:
+        if call.name in {"retrieve_knowledge", "tavily_search"}:
+            return True
+        if call.name in {"read_memory_bundle", "read_session_memory", "read_profile_memory"}:
+            workflow_trace = state.get("workflow_trace", [])
+            return isinstance(workflow_trace, list) and "chatbot" in workflow_trace
+        return False
+
+    def _summarize_value(self, value: Any, limit: int = 320) -> str:
+        try:
+            rendered = json.dumps(value, ensure_ascii=False, default=str)
+        except TypeError:
+            rendered = repr(value)
+        compact = " ".join(rendered.split())
+        if len(compact) <= limit:
+            return compact
+        return f"{compact[:limit]}..."

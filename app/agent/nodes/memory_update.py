@@ -17,8 +17,6 @@ class MemoryUpdateNode:
 
     async def __call__(self, state: AgentState) -> AgentState:
         """执行记忆写入。"""
-        logger.info("entering node=memory_update")
-
         current_topic = self._normalize_topic(
             state.get("current_topic"),
             state.get("perception_signals", []),

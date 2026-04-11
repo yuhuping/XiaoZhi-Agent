@@ -19,6 +19,13 @@ from app.tools.basic_tools import BasicTools
 logger = logging.getLogger(__name__)
 
 
+def _preview_text(value: str | None, limit: int = 120) -> str:
+    text = " ".join((value or "").strip().split())
+    if len(text) <= limit:
+        return text or "<empty>"
+    return f"{text[:limit]}..."
+
+
 class ChatService:
     """聊天服务：封装工作流调用。"""
 
@@ -36,6 +43,13 @@ class ChatService:
         on_delta: Callable[[str], Awaitable[None] | None] | None,
     ) -> ChatResponse:
         """执行一次对话请求，可选逐段回调。"""
+        logger.info(
+            "[chat_request] mode=%s session_id=%s has_image=%s text=%r",
+            request.mode,
+            request.session_id,
+            bool(request.image_base64 or request.image_url),
+            _preview_text(request.text),
+        )
         settings = self.model_service.settings
         with tracing_context(
             enabled=is_langsmith_enabled(settings),

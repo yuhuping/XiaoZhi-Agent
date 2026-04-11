@@ -13,7 +13,14 @@ class RespondNode:
         self.tools = tools
 
     async def __call__(self, state: AgentState) -> AgentState:
-        logger.info("entering node=respond")
+        logger.info(
+            "[react_respond] iteration=%s mode=%s selected_act=%s selected_tool=%r observation=%r",
+            state.get("react_iteration"),
+            state.get("interaction_mode"),
+            state.get("selected_act"),
+            state.get("selected_tool"),
+            state.get("observation_summary"),
+        )
         result = await self.tools.generate_final_response(
             state,
             on_delta=state.get("stream_delta_writer"),

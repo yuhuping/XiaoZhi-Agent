@@ -108,6 +108,26 @@ class TestShouldContinueReact:
         state = _make_state(react_iteration=1, react_max_iterations=3, selected_act="tavily_search")
         assert should_continue_react(state) == "reason"
 
+    def test_continues_after_successful_tool_observation(self) -> None:
+        state = _make_state(
+            react_iteration=1,
+            react_max_iterations=3,
+            selected_act="tavily_search",
+            tool_success=True,
+            observation_summary="retrieved 2 web results via tavily_search",
+        )
+        assert should_continue_react(state) == "reason"
+
+    def test_continues_after_failed_tool_observation(self) -> None:
+        state = _make_state(
+            react_iteration=1,
+            react_max_iterations=3,
+            selected_act="tavily_search",
+            tool_success=False,
+            observation_summary="search failed",
+        )
+        assert should_continue_react(state) == "reason"
+
     def test_stops_at_max_iterations(self) -> None:
         state = _make_state(react_iteration=3, react_max_iterations=3, selected_act="tavily_search")
         assert should_continue_react(state) == "respond"

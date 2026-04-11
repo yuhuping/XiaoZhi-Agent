@@ -8,14 +8,19 @@ from app.schemas.chat import ChatRequest, InteractionMode
 
 
 def build_reason_instruction(mode: InteractionMode) -> str:
+    # 节点：reason（ReAct 子图，parent/companion 模式）
+    # ReAct 推理步骤的系统指令；决定调用工具还是直接回答。
+    # 每轮 ReAct 迭代调用一次（最多 3 轮），发生在工具调用或直接响应之前。
     lines = [
         "You are XiaoZhi, an assistant for children ages 3 to 8 or their parents, depending on mode.",
         _build_reason_mode_rule(mode),
         "Decide whether to answer directly or call one bound tool when grounding or memory lookup is needed.",
+        "If prior tool observation already provides enough information, answer directly instead of calling another tool.",
+        "Do not repeat the same tool for the same user request unless the previous tool call clearly failed or returned insufficient information.",
         "Tool policy:",
         "- retrieve_knowledge: use for stable educational facts and non-time-sensitive knowledge.",
         "- tavily_search: use for recent, time-sensitive, current-event, or future information.",
-        "- read_memory_bundle: use only when short or ambiguous user input depends on prior context.",
+        "- read_memory_bundle: use when the user references a past session, asks about previous learning history, or context clearly requires cross-session memory.",
         "Temporal policy:",
         "- For weather/news/current-event requests with relative time words (today, tonight, tomorrow), prefer tavily_search.",
         "- Interpret relative time against current local datetime, not memory history.",
@@ -49,6 +54,7 @@ def _build_parent_summary_policy_lines() -> list[str]:
 
 
 def build_reason_user_prompt(chat_request: ChatRequest, state: AgentState) -> str:
+    # 节点：reason（ReAct 子图，parent/companion 模式）
     age_band = _resolve_age_band(chat_request)
     return textwrap.dedent(
         f"""
@@ -60,15 +66,26 @@ def build_reason_user_prompt(chat_request: ChatRequest, state: AgentState) -> st
         Current topic: {state.get("current_topic") or state.get("topic_hint") or "unknown"}
         Last assistant question: {state.get("last_agent_question") or "none"}
         Perception signals: {", ".join(state.get("perception_signals", [])) or "none"}
+        Selected act so far: {state.get("selected_act") or "direct"}
+        Selected tool so far: {state.get("selected_tool") or "none"}
+        Tool success: {"yes" if state.get("tool_success") else "no"}
+        Observation summary: {state.get("observation_summary") or "none"}
+        Retrieved context:
+        {_format_retrieved_chunks(state)}
         Memory:
         {state.get("Memory") or {}}
         Recent history:
         {_format_history(state)}
+        ReAct history:
+        {_format_react_history(state)}
         """
     ).strip()
 
 
 def build_response_instruction(mode: InteractionMode) -> str:
+    # 节点：respond（ReAct 子图，parent/companion 模式）
+    # 当 skill 未提供自己的 instruction 时，也作为 skill 响应的兜底指令。
+    # 每次请求在最后一轮 ReAct 迭代结束后调用一次，生成面向用户的最终回复。
     if mode == "education":
         mode_rule = "Education mode: explain briefly, guide with one easy follow-up question."
     elif mode == "companion":
@@ -94,10 +111,11 @@ def build_response_instruction(mode: InteractionMode) -> str:
 def build_response_user_prompt(
     chat_request: ChatRequest,
     state: AgentState,
-    include_json_contract: bool = True,
 ) -> str:
+    # 节点：respond（ReAct 子图，parent/companion 模式）
+    # 同时也作为 skill 响应的兜底 user prompt。
     age_band = _resolve_age_band(chat_request)
-    base_prompt = textwrap.dedent(
+    return textwrap.dedent(
         f"""
         Mode: {chat_request.mode}
         Age: {age_band}
@@ -114,17 +132,6 @@ def build_response_user_prompt(
         {_format_history(state)}
         """
     ).strip()
-    if not include_json_contract:
-        return base_prompt
-    return (
-        f"{base_prompt}\n\n"
-        "Return JSON:\n"
-        "- topic: short noun phrase or empty string\n"
-        "- message: final child-friendly reply\n"
-        "- follow_up_question: one short question or empty string\n"
-        "- confidence: high | medium | low\n"
-        "- safety_notes: short string, empty if no issue"
-    )
 
 
 def _format_history(state: AgentState) -> str:
@@ -159,5 +166,21 @@ def _format_retrieved_chunks(state: AgentState) -> str:
     for chunk in chunks[:3]:
         lines.append(
             f"- source={chunk.get('source')} score={chunk.get('score')} snippet={chunk.get('snippet')}"
+        )
+    return "\n".join(lines)
+
+
+def _format_react_history(state: AgentState) -> str:
+    history = state.get("react_history", [])
+    if not history:
+        return "No prior react steps."
+    lines = []
+    for item in history[-3:]:
+        iteration = item.get("iteration", "?")
+        thought = item.get("thought") or "none"
+        action = item.get("action") or "direct"
+        observation = item.get("observation") or "none"
+        lines.append(
+            f"- iteration={iteration} action={action} thought={thought} observation={observation}"
         )
     return "\n".join(lines)

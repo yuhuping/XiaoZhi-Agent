@@ -59,6 +59,17 @@ class ReasonNode:
         }
         react_history = [*state.get("react_history", []), react_history_entry]
 
+        logger.info(
+            "[react_reason_node] iteration=%s mode=%s selected_act=%s selected_tool=%r tool_input=%s route_reason=%r",
+            react_iteration,
+            state.get("interaction_mode"),
+            decision_act,
+            selected_tool,
+            tool_input,
+            decision_reason,
+            # self._preview_text(decision.decision, limit=160),# 觉得没必要，就去掉这个log
+        )
+
         ai_message = AIMessage(content=decision.decision, tool_calls=tool_calls)
         return {
             "react_decision": decision.decision,
@@ -207,3 +218,11 @@ class ReasonNode:
             "session_id": state["session_id"],
             "profile_id": state["profile_id"],
         }
+
+    def _preview_text(self, value: object, limit: int = 160) -> str:
+        if not isinstance(value, str):
+            return "<non_text>"
+        normalized = " ".join(value.strip().split())
+        if len(normalized) <= limit:
+            return normalized or "<empty>"
+        return f"{normalized[:limit]}..."

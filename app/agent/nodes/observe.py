@@ -85,6 +85,15 @@ class ObserveNode:
                 "react_history": react_history,
             }
         )
+        logger.info(
+            "[react_observe] iteration=%s selected_act=%s selected_tool=%r tool_success=%s summary=%r payload_keys=%s",
+            state.get("react_iteration"),
+            selected_act,
+            state.get("selected_tool"),
+            updates.get("tool_success"),
+            summary,
+            sorted(last_tool_payload.keys()),
+        )
         return updates
 
     def _extract_last_tool_payload(self, messages: list[Any]) -> dict[str, Any]:

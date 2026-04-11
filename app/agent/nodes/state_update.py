@@ -49,6 +49,10 @@ class StateUpdateNode:
             break
 
         current_topic = state.get("current_topic") or pending_topic
+        # education 模式自动注入跨会话长期记忆；
+        # companion/parent（ReAct）初始为空，LLM 按需调用 read_memory_bundle 工具拉取。
+        mode = state.get("interaction_mode", "education")
+        memory_profile = profile if isinstance(profile, dict) and mode == "education" else {}
         return {
             "history": history,
             "turn_index": (len(history) // 2) + 1,
@@ -56,7 +60,7 @@ class StateUpdateNode:
             "pending_topic": pending_topic,
             "current_topic": current_topic,
             "short_Memory": session if isinstance(session, dict) else {},
-            "Memory": profile if isinstance(profile, dict) else {},
+            "Memory": memory_profile,
             "dialogue_stage": "state_ready",
             "workflow_trace": append_trace(state, "state_update"),
         }

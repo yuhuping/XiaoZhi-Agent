@@ -8,9 +8,8 @@ import inspect
 import json
 import logging
 from pathlib import Path
-import re
 import tempfile
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable, Literal, TypeVar
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -18,7 +17,7 @@ from langsmith import trace, tracing_context
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
-from openai import OpenAI
+from pydantic import BaseModel
 
 from app.agent.state import AgentState
 from app.core.config import Settings
@@ -36,6 +35,9 @@ from app.prompts.tutor_prompts import (
     build_response_user_prompt,
 )
 from app.schemas.chat import ActType, ChatRequest, ConfidenceLevel
+from app.schemas.llm_outputs import EpisodicSummary, PlanResult, ReactResponse, TopicSummary
+
+_T = TypeVar("_T", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +69,6 @@ class ModelService:
         self.settings = settings
         self.skill_registry = skill_registry
         self._openai_call_semaphore = asyncio.Semaphore(max(1, settings.openai_max_concurrency))
-        self._text_client: OpenAI | None = None
-        self._vision_client: OpenAI | None = None
         self._planning_text_llm: ChatOpenAI | None = None
         self._planning_vision_llm: ChatOpenAI | None = None
 
@@ -93,11 +93,30 @@ class ModelService:
                 },
                 metadata={"component": "model_service"},
             ) as run:
+                reason_instruction = build_reason_instruction(chat_request.mode)
+                reason_prompt = build_reason_user_prompt(chat_request, state)
+                tool_names = [tool.name for tool in tools or []]
+                logger.info(
+                    "[react_reason_prompt] mode=%s tool_names=%s instruction_chars=%s prompt_chars=%s",
+                    chat_request.mode,
+                    tool_names,
+                    len(reason_instruction),
+                    len(reason_prompt),
+                )
+                self._dump_debug_json(
+                    "react_reason_prompt",
+                    {
+                        "mode": chat_request.mode,
+                        "instruction": reason_instruction,
+                        "prompt": reason_prompt,
+                        "tool_names": tool_names,
+                    },
+                )
                 async with self._openai_call_semaphore:
                     ai_message = await self._call_llm_with_tools(
                         model=self.settings.llm_model,
-                        instruction=build_reason_instruction(chat_request.mode),
-                        prompt=build_reason_user_prompt(chat_request, state),
+                        instruction=reason_instruction,
+                        prompt=reason_prompt,
                         chat_request=chat_request,
                         tools=tools or [],
                     )
@@ -105,6 +124,14 @@ class ModelService:
                 selected_act = self._select_act_from_tool(tool_name)
                 decision_text = self._extract_ai_text(ai_message)
                 route_reason = self._build_route_reason(selected_act, tool_name, decision_text)
+                logger.info(
+                    "[react_reason_result] selected_act=%s tool_name=%r tool_input=%s decision=%r route_reason=%r",
+                    selected_act,
+                    tool_name,
+                    self._preview_text(json.dumps(tool_input, ensure_ascii=False, default=str), limit=220),
+                    self._preview_text(decision_text, limit=180),
+                    route_reason,
+                )
                 decision = ReasonDecision(
                     decision=decision_text,
                     selected_act=selected_act,
@@ -146,40 +173,18 @@ class ModelService:
             ) as run:
                 async with self._openai_call_semaphore:
                     if on_delta is None:
-                        parsed = self._call_llm_json(
-                            model=self.settings.llm_model,
-                            schema_name="xiaozhi_response",
-                            schema={
-                                "type": "object",
-                                "properties": {
-                                    "topic": {"type": "string"},
-                                    "message": {"type": "string"},
-                                    "follow_up_question": {"type": "string"},
-                                    "confidence": {
-                                        "type": "string",
-                                        "enum": ["high", "medium", "low"],
-                                    },
-                                    "safety_notes": {"type": "string"},
-                                },
-                                "required": [
-                                    "topic",
-                                    "message",
-                                    "follow_up_question",
-                                    "confidence",
-                                    "safety_notes",
-                                ],
-                                "additionalProperties": False,
-                            },
+                        result = self._call_llm_json(
+                            model_class=ReactResponse,
                             instruction=build_response_instruction(chat_request.mode),
                             prompt=build_response_user_prompt(chat_request, state),
                             chat_request=chat_request,
                         )
                         response = ResponseDraft(
-                            topic=self._optional_text(parsed.get("topic")) or state.get("current_topic"),
-                            message=self._clean_text(parsed.get("message"), "Let us learn one small thing together."),
-                            follow_up_question=self._optional_text(parsed.get("follow_up_question")),
-                            confidence=self._normalize_confidence(parsed.get("confidence")),
-                            safety_notes=self._clean_text(parsed.get("safety_notes"), ""),
+                            topic=self._optional_text(result.topic) or state.get("current_topic"),
+                            message=self._clean_text(result.message, "Let us learn one small thing together."),
+                            follow_up_question=self._optional_text(result.follow_up_question),
+                            confidence=self._normalize_confidence(result.confidence),
+                            safety_notes=self._clean_text(result.safety_notes, ""),
                         )
                     else:
                         streamed_message = await self._stream_final_response_text(
@@ -217,33 +222,20 @@ class ModelService:
             ) as run:
                 async with self._openai_call_semaphore:
                     try:
-                        parsed = self._call_llm_json(
-                            model=self.settings.llm_model,
-                            schema_name="xiaozhi_plan",
-                            schema={
-                                "type": "object",
-                                "properties": {
-                                    "steps": {"type": "array", "items": {"type": "string"}},
-                                    "needs_retrieval": {"type": "boolean"},
-                                    "retrieval_query": {"type": "string"},
-                                },
-                                "required": ["steps", "needs_retrieval", "retrieval_query"],
-                                "additionalProperties": False,
-                            },
+                        plan = self._call_llm_json(
+                            model_class=PlanResult,
                             instruction=build_plan_instruction(),
                             prompt=build_plan_user_prompt(chat_request, state),
                             chat_request=chat_request,
                         )
-                    except Exception:
-                        logger.warning("generate_plan: LLM JSON parse failed, falling back to single step")
-                        parsed = {"steps": ["直接回答用户问题"], "needs_retrieval": False, "retrieval_query": ""}
-                    steps = parsed.get("steps") or ["直接回答用户问题"]
-                    if not isinstance(steps, list) or len(steps) == 0:
-                        steps = ["直接回答用户问题"]
+                    except Exception as exc:
+                        logger.warning("generate_plan: structured output failed, falling back to single step: %s", exc)
+                        plan = PlanResult()
+                    steps = plan.steps[:5] or ["直接回答用户问题"]
                     result = {
-                        "steps": steps[:5],
-                        "needs_retrieval": bool(parsed.get("needs_retrieval", False)),
-                        "retrieval_query": str(parsed.get("retrieval_query", "")),
+                        "steps": steps,
+                        "needs_retrieval": plan.needs_retrieval,
+                        "retrieval_query": plan.retrieval_query,
                     }
                     run.end(outputs={"step_count": len(result["steps"]), "needs_retrieval": result["needs_retrieval"]})
                     return result
@@ -301,7 +293,6 @@ class ModelService:
                 prompt = skill_prompt or build_response_user_prompt(
                     chat_request=chat_request,
                     state=state,
-                    include_json_contract=False,
                 )
                 # logger.info(
                 #     "[skill_respond] tool=%r instruction=%r prompt_preview=%r",
@@ -317,7 +308,6 @@ class ModelService:
                 prompt = build_response_user_prompt(
                     chat_request=chat_request,
                     state=state,
-                    include_json_contract=False,
                 )
         else:
             instruction = (
@@ -327,8 +317,26 @@ class ModelService:
             prompt = build_response_user_prompt(
                 chat_request=chat_request,
                 state=state,
-                include_json_contract=False,
             )
+        logger.info(
+            "[react_response_prompt] selected_act=%s selected_tool=%r observation=%r",
+            state.get("selected_act"),
+            state.get("selected_tool"),
+            self._preview_text(str(state.get("observation_summary") or ""), limit=120),
+            # self._preview_text(instruction, limit=180),
+            # self._preview_text(prompt, limit=320),
+        )
+        self._dump_debug_json(
+            "react_response_prompt",
+            {
+                "mode": chat_request.mode,
+                "selected_act": state.get("selected_act"),
+                "selected_tool": state.get("selected_tool"),
+                "instruction": instruction,
+                "prompt": prompt,
+                "observation_summary": state.get("observation_summary"),
+            },
+        )
         human_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         image_content = self._build_image_content_from_request_or_history(chat_request, state)
         if image_content is not None:
@@ -493,77 +501,19 @@ class ModelService:
 
     def _call_llm_json(
         self,
-        model: str,
-        schema_name: str,
-        schema: dict[str, Any],
+        model_class: type[_T],
         instruction: str,
         prompt: str,
         chat_request: ChatRequest,
-    ) -> dict[str, Any]:
-        with tracing_context(
-            enabled=is_langsmith_enabled(self.settings),
-            project_name=self.settings.langsmith_project,
-        ):
-            with trace(
-                "llm_chat_completions",
-                run_type="llm",
-                inputs={
-                    "schema_name": schema_name,
-                    "model": model,
-                    "text": chat_request.text or "",
-                    "has_image": bool(chat_request.image_base64 or chat_request.image_url),
-                },
-                metadata={"provider": "llm.chat_completions"},
-            ) as run:
-                payload = self._build_payload(
-                    model=model,
-                    instruction=instruction,
-                    schema=schema,
-                    prompt=prompt,
-                    chat_request=chat_request,
-                )
-                try:
-                    is_vision = bool(chat_request.image_base64 or chat_request.image_url)
-                    client = self._get_vision_client() if is_vision else self._get_text_client()
-                    model_name = self.settings.vllm_model if is_vision else model
+    ) -> _T:
+        is_vision = bool(chat_request.image_base64 or chat_request.image_url)
+        llm = self._get_planning_vision_llm() if is_vision else self._get_planning_text_llm()
+        # json_mode: Dashscope 要求 messages 里含 "json" 一词；在 SystemMessage 末尾附加提示即可满足。
+        structured_llm = llm.with_structured_output(model_class, method="json_mode")
 
-                    # 中文注释: 将 chat_completions 输入写入临时 JSON，终端只看路径。
-                    self._dump_debug_json(
-                        "llm_chat_completions_payload",
-                        {
-                            "model": model_name,
-                            "payload": payload,
-                        },
-                    )
-
-                    response = client.chat.completions.create(
-                        model=model_name,
-                        messages=payload["messages"],
-                        stream=False,
-                        timeout=self._resolve_request_timeout(chat_request),
-                    )
-                    raw_body = self._extract_completion_content(
-                        response.choices[0].message.content if response.choices else None
-                    )
-                except Exception as exc:
-                    raise HTTPException(status_code=502, detail=f"LLM API request failed: {exc}") from exc
-                if not raw_body:
-                    raise HTTPException(status_code=502, detail="LLM API returned empty content.")
-                parsed_output = self._parse_json_from_text(raw_body)
-                run.end(outputs=parsed_output)
-                return parsed_output
-
-    def _build_payload(
-        self,
-        model: str,
-        instruction: str,
-        schema: dict[str, Any],
-        prompt: str,
-        chat_request: ChatRequest,
-    ) -> dict[str, Any]:
-        content: list[dict[str, object]] = [{"type": "text", "text": prompt}]
+        user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         if chat_request.image_base64:
-            content.append(
+            user_content.append(
                 {
                     "type": "image_url",
                     "image_url": {
@@ -573,35 +523,22 @@ class ModelService:
                 }
             )
         elif chat_request.image_url:
-            content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": str(chat_request.image_url), "detail": "auto"},
-                }
+            user_content.append(
+                {"type": "image_url", "image_url": {"url": str(chat_request.image_url), "detail": "auto"}}
             )
-        return {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": self._build_schema_instruction(instruction, schema)},
-                {"role": "user", "content": content},
-            ],
-        }
 
-    def _get_text_client(self) -> OpenAI:
-        if self._text_client is None:
-            self._text_client = OpenAI(
-                api_key=self.settings.llm_api_key,
-                base_url=self.settings.llm_base_url,
-            )
-        return self._text_client
-
-    def _get_vision_client(self) -> OpenAI:
-        if self._vision_client is None:
-            self._vision_client = OpenAI(
-                api_key=self.settings.vllm_api_key or self.settings.llm_api_key,
-                base_url=self.settings.vllm_base_url or self.settings.llm_base_url,
-            )
-        return self._vision_client
+        messages = [SystemMessage(content=f"{instruction}\nRespond with JSON."), HumanMessage(content=user_content)]
+        # 中文注释: 将 structured_output 调用输入写入临时 JSON，终端只看路径。
+        self._dump_debug_json(
+            "llm_chat_completions_payload",
+            {
+                "model_class": model_class.__name__,
+                "instruction": instruction,
+                "prompt": prompt,
+                "has_image": is_vision,
+            },
+        )
+        return structured_llm.invoke(messages)
 
     def _get_planning_text_llm(self) -> ChatOpenAI:
         if self._planning_text_llm is None:
@@ -623,29 +560,6 @@ class ModelService:
             )
         return self._planning_vision_llm
 
-    def _build_schema_instruction(self, instruction: str, schema: dict[str, Any]) -> str:
-        schema_json = json.dumps(schema, ensure_ascii=False)
-        return (
-            f"{instruction}\n\n"
-            "Output requirements:\n"
-            "1. Reply with a single JSON object only.\n"
-            "2. Do not include markdown, code fences, or extra commentary.\n"
-            f"3. Follow this JSON schema exactly: {schema_json}"
-        )
-
-    def _extract_completion_content(self, content: object) -> str:
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            parts: list[str] = []
-            for item in content:
-                if not isinstance(item, dict):
-                    continue
-                if item.get("type") == "text" and isinstance(item.get("text"), str):
-                    parts.append(item["text"])
-            return "\n".join(parts).strip()
-        return ""
-
     def _extract_stream_chunk_text(self, content: object) -> str:
         if isinstance(content, str):
             return content
@@ -658,58 +572,6 @@ class ModelService:
                     parts.append(item)
             return "".join(parts)
         return ""
-
-    def _parse_json_from_text(self, text: str) -> dict[str, Any]:
-        raw = text.strip()
-        if not raw:
-            raise HTTPException(status_code=502, detail="LLM API returned empty text content.")
-        decoder = json.JSONDecoder()
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-        try:
-            parsed, _ = decoder.raw_decode(raw)
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
-        fence_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", raw, flags=re.IGNORECASE)
-        if fence_match:
-            candidate = fence_match.group(1).strip()
-            try:
-                parsed = json.loads(candidate)
-                if isinstance(parsed, dict):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-            try:
-                parsed, _ = decoder.raw_decode(candidate)
-                if isinstance(parsed, dict):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-
-        start = raw.find("{")
-        if start != -1:
-            candidate = raw[start:]
-            try:
-                parsed = json.loads(candidate)
-                if isinstance(parsed, dict):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-            try:
-                parsed, _ = decoder.raw_decode(candidate)
-                if isinstance(parsed, dict):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-
-        raise HTTPException(status_code=502, detail=f"LLM API returned non-JSON content: {raw[:300]}")
 
     def _resolve_request_timeout(self, chat_request: ChatRequest) -> int:
         if chat_request.image_base64:
@@ -732,6 +594,14 @@ class ModelService:
         if message.tool_calls:
             return "use_tool"
         return "respond_directly"
+
+    def _preview_text(self, value: object, limit: int = 160) -> str:
+        if not isinstance(value, str):
+            return "<non_text>"
+        compact = " ".join(value.strip().split())
+        if len(compact) <= limit:
+            return compact or "<empty>"
+        return f"{compact[:limit]}..."
 
     def _extract_first_tool_call(self, message: AIMessage) -> tuple[str | None, dict[str, Any]]:
         tool_calls = message.tool_calls or []
@@ -860,22 +730,8 @@ class ModelService:
                     metadata={"component": "model_service"},
                 ) as run:
                     async with self._openai_call_semaphore:
-                        parsed = self._call_llm_json(
-                            model=self.settings.llm_model,
-                            schema_name="memory_compact_summary",
-                            schema={
-                                "type": "object",
-                                "properties": {
-                                    "summary": {"type": "string"},
-                                    "topic_hint": {"type": "string"},
-                                    "key_points": {
-                                        "type": "array",
-                                        "items": {"type": "string"},
-                                    },
-                                },
-                                "required": ["summary", "topic_hint", "key_points"],
-                                "additionalProperties": False,
-                            },
+                        ep = self._call_llm_json(
+                            model_class=EpisodicSummary,
                             instruction=(
                                 "You are a memory compressor. "
                                 "Summarize a batch of tutoring events into one episodic memory."
@@ -883,20 +739,17 @@ class ModelService:
                             prompt=prompt,
                             chat_request=ChatRequest(text="compress episodic memory batch", mode=mode_value),
                         )
-                    summary = self._clean_text(parsed.get("summary"), "")
+                    summary = self._clean_text(ep.summary, "")
                     if not summary:
                         return None
-                    topic_hint = self._optional_text(parsed.get("topic_hint"))
-                    key_points_raw = parsed.get("key_points")
                     key_points: list[str] = []
-                    if isinstance(key_points_raw, list):
-                        for point in key_points_raw:
-                            text = self._clean_text(point, "")
-                            if text and text not in key_points:
-                                key_points.append(text)
+                    for point in ep.key_points:
+                        text = self._clean_text(point, "")
+                        if text and text not in key_points:
+                            key_points.append(text)
                     result = {
                         "summary": summary[:520],
-                        "topic_hint": topic_hint,
+                        "topic_hint": self._optional_text(ep.topic_hint),
                         "key_points": key_points[:8],
                     }
                     run.end(outputs=result)
@@ -922,20 +775,13 @@ class ModelService:
             + "\n".join(prompt_lines)
         )
         try:
-            parsed = self._call_llm_json(
-                model=self.settings.llm_model,
-                schema_name="memory_summary",
-                schema={
-                    "type": "object",
-                    "properties": {"summary": {"type": "string"}},
-                    "required": ["summary"],
-                    "additionalProperties": False,
-                },
+            ts = self._call_llm_json(
+                model_class=TopicSummary,
                 instruction="You are a memory compressor for child tutoring sessions.",
                 prompt=prompt,
                 chat_request=ChatRequest(text="compress memory history", mode=mode_value),
             )
-            summary = self._clean_text(parsed.get("summary"), "")
+            summary = self._clean_text(ts.summary, "")
             if summary:
                 return summary[:220]
         except Exception as exc:
