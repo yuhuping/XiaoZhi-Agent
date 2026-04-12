@@ -128,6 +128,71 @@ TESTS: list[dict] = [
             ("message 包含'小宝'（最终答案含孩子名）", lambda r: "小宝" in r.message),
         ],
     },
+    # ── 图片理解 ──────────────────────────────────────────────────────────────
+    {
+        "id": "IM-01a",
+        "name": "图片识别（'这是什么？' + image_url）",
+        "request": {
+            "text": "这是什么？",
+            "image_url": "https://ts1.tc.mm.bing.net/th/id/OIP-C.Mykh0w4k5mpqd4xGDKBgPQHaE7?w=193&h=135&c=8&rs=1&qlt=90&o=6&dpr=1.3&pid=3.1&rm=2",
+            "mode": "companion",
+            "age_hint": "6",
+            "session_id": "im-sess-01",
+        },
+        "checks": [
+            ("message 非空", lambda r: bool(r.message)),
+            ("message 包含'长颈鹿'", lambda r: "长颈鹿" in r.message),
+        ],
+    },
+    {
+        "id": "IM-01b",
+        "name": "图片追问（无图，同 session，从历史恢复图片上下文）",
+        "request": {
+            "text": "那么图中具体有几只长颈鹿呢？站位情况怎么样？",
+            "mode": "companion",
+            "age_hint": "6",
+            "session_id": "im-sess-01",
+        },
+        "checks": [
+            ("message 非空", lambda r: bool(r.message)),
+            (
+                "message 包含数量描述（数字或'只'）",
+                lambda r: "只" in r.message or any(
+                    c in r.message for c in "一二三四五六七八九十0123456789"
+                ),
+            ),
+        ],
+    },
+    # ── Skill：generate_parent_summary ───────────────────────────────────────
+    {
+        "id": "SK-01a",
+        "name": "Skill 前置：写入孩子学习数据（education mode，default_child）",
+        "request": {
+            "text": "今天学了加法，1+1=2，1+2=3，老师还教我们数数到20！",
+            "mode": "education",
+            "age_hint": "6",
+            "session_id": "sk-edu-01",
+        },
+        "checks": [
+            ("memory.session_updated == True", lambda r: r.memory.session_updated is True),
+            ("message 非空", lambda r: bool(r.message)),
+        ],
+    },
+    {
+        "id": "SK-01b",
+        "name": "Skill 触发：家长查询孩子学习情况（generate_parent_summary）",
+        "request": {
+            "text": "帮我看看孩子最近的学习情况，有什么进展吗？",
+            "mode": "parent",
+            "age_hint": "6",
+            "session_id": "sk-parent-01",
+        },
+        "checks": [
+            ("react.selected_act == 'skill'", lambda r: r.react.selected_act == "skill"),
+            ("'tools' in workflow_trace（skill 被调用）", lambda r: "tools" in r.metadata.workflow_trace),
+            ("message 非空", lambda r: bool(r.message)),
+        ],
+    },
 ]
 
 

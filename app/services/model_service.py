@@ -119,6 +119,7 @@ class ModelService:
                         prompt=reason_prompt,
                         chat_request=chat_request,
                         tools=tools or [],
+                        state=state,
                     )
                 tool_name, tool_input = self._extract_first_tool_call(ai_message)
                 selected_act = self._select_act_from_tool(tool_name)
@@ -140,6 +141,16 @@ class ModelService:
                     route_reason=route_reason,
                     topic_hint=self._infer_topic_hint(chat_request, state),
                     confidence="medium",
+                )
+                self._dump_debug_json(
+                    "reason_decision_output",
+                    {
+                        "selected_act": decision.selected_act,
+                        "tool_name": decision.tool_name,
+                        "tool_input": decision.tool_input,
+                        "route_reason": decision.route_reason,
+                        "decision_text": decision_text,
+                    },
                 )
                 run.end(
                     outputs={
@@ -173,8 +184,18 @@ class ModelService:
             ) as run:
                 async with self._openai_call_semaphore:
                     if on_delta is None:
-                        instruction = build_response_instruction(chat_request.mode)
-                        prompt = build_response_user_prompt(chat_request, state)
+                        # skill 模式：优先使用 skill 专属的 instruction / prompt
+                        if state.get("selected_act") == "skill" and self.skill_registry:
+                            skill = self.skill_registry.find_skill_by_tool_name(state.get("selected_tool"))
+                            if skill:
+                                instruction = skill.get_response_instruction() or build_response_instruction(chat_request.mode)
+                                prompt = skill.get_response_user_prompt(state) or build_response_user_prompt(chat_request, state)
+                            else:
+                                instruction = build_response_instruction(chat_request.mode)
+                                prompt = build_response_user_prompt(chat_request, state)
+                        else:
+                            instruction = build_response_instruction(chat_request.mode)
+                            prompt = build_response_user_prompt(chat_request, state)
                         raw_message = ""
                         topic_hint: str | None = None
                         follow_up: str | None = None
@@ -385,7 +406,12 @@ class ModelService:
                 status_code=502,
                 detail=f"LLM stream request failed: {exc}",
             ) from exc
-        return "".join(fragments).strip()
+        full_text = "".join(fragments).strip()
+        self._dump_debug_json(
+            "llm_stream_response_output",
+            {"mode": chat_request.mode, "response_text": full_text},
+        )
+        return full_text
 
     def _build_image_content_from_request_or_history(
         self,
@@ -439,44 +465,31 @@ class ModelService:
         prompt: str,
         chat_request: ChatRequest,
         tools: list[StructuredTool],
+        state: "AgentState | None" = None,
     ) -> AIMessage:
         with tracing_context(
             enabled=is_langsmith_enabled(self.settings),
             project_name=self.settings.langsmith_project,
         ):
+            # 优先取当前请求图片，否则从历史轮次回溯（与 response 节点保持一致）
+            image_content = self._build_image_content_from_request_or_history(
+                chat_request, state or {}
+            )
             with trace(
                 "llm_planning_bind_tools",
                 run_type="llm",
                 inputs={
                     "model": model,
                     "text": chat_request.text or "",
-                    "has_image": bool(chat_request.image_base64 or chat_request.image_url),
+                    "has_image": bool(image_content),
                     "tool_count": len(tools),
                 },
                 metadata={"provider": "llm.bind_tools"},
             ) as run:
                 human_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-                if chat_request.image_base64:
-                    human_content.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": (
-                                    f"data:{chat_request.image_mime_type};"
-                                    f"base64,{chat_request.image_base64}"
-                                ),
-                                "detail": "auto",
-                            },
-                        }
-                    )
-                elif chat_request.image_url:
-                    human_content.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": str(chat_request.image_url), "detail": "auto"},
-                        }
-                    )
-                if chat_request.image_url or chat_request.image_base64:
+                if image_content:
+                    human_content.append(image_content)
+                if image_content:
                     base_model = self._get_planning_vision_llm()
                 else:
                     base_model = self._get_planning_text_llm()
@@ -511,6 +524,13 @@ class ModelService:
                         status_code=502,
                         detail="LLM bind_tools returned non-AIMessage response.",
                     )
+                self._dump_debug_json(
+                    "llm_bind_tools_output",
+                    {
+                        "tool_calls": response.tool_calls,
+                        "content": self._extract_ai_text(response),
+                    },
+                )
                 run.end(
                     outputs={
                         "tool_calls": response.tool_calls,
@@ -547,7 +567,7 @@ class ModelService:
         except Exception as exc:
             logger.warning("[_invoke_response_plain] plain invoke failed: %s", exc)
         return ""
-
+    # test时候采用同步调用，正式环境采用异步调用，保持接口一致。
     def _call_llm_json(
         self,
         model_class: type[_T],
@@ -576,7 +596,9 @@ class ModelService:
                 {"type": "image_url", "image_url": {"url": str(chat_request.image_url), "detail": "auto"}}
             )
 
-        messages = [SystemMessage(content=f"{instruction}\nRespond with JSON."), HumanMessage(content=user_content)]
+        # 生成明确的 JSON schema 字段提示，避免 qwen 等模型自造字段名或类型。
+        schema_hint = f"Respond with JSON. Use exactly these fields: {self._build_schema_hint(model_class)}"
+        messages = [SystemMessage(content=f"{instruction}\n{schema_hint}"), HumanMessage(content=user_content)]
         # 中文注释: 将 structured_output 调用输入写入临时 JSON，终端只看路径。
         self._dump_debug_json(
             "llm_chat_completions_payload",
@@ -587,7 +609,12 @@ class ModelService:
                 "has_image": is_vision,
             },
         )
-        return structured_llm.invoke(messages)
+        result = structured_llm.invoke(messages)
+        self._dump_debug_json(
+            "llm_chat_completions_output",
+            {"model_class": model_class.__name__, "result": result.model_dump() if hasattr(result, "model_dump") else str(result)},
+        )
+        return result
 
     def _get_planning_text_llm(self) -> ChatOpenAI:
         if self._planning_text_llm is None:
@@ -705,6 +732,29 @@ class ModelService:
         if not text:
             return None
         return text.split()[0][:32]
+
+    def _build_schema_hint(self, model_class: type[BaseModel]) -> str:
+        """为 json_mode 调用生成精确的字段提示，避免模型自造字段名或返回错误类型。"""
+        import typing
+        parts: list[str] = []
+        for name, field in model_class.model_fields.items():
+            ann = field.annotation
+            origin = getattr(ann, "__origin__", None)
+            # Literal 类型：直接列出允许值
+            if origin is typing.Literal:
+                allowed = "|".join(f'"{a}"' for a in ann.__args__)
+                parts.append(f'"{name}": {allowed}')
+            elif ann is str or ann == str:
+                parts.append(f'"{name}": "string"')
+            elif ann is bool or ann == bool:
+                parts.append(f'"{name}": true|false')
+            elif ann is int or ann == int:
+                parts.append(f'"{name}": integer')
+            elif ann is float or ann == float:
+                parts.append(f'"{name}": number')
+            else:
+                parts.append(f'"{name}": value')
+        return "{" + ", ".join(parts) + "}"
 
     def _clean_text(self, value: object, fallback: str) -> str:
         if not isinstance(value, str):

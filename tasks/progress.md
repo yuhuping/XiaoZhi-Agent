@@ -89,3 +89,8 @@ ReAct 路径 (parent/companion):
 - 今天做了什么：根据第二轮验收报告（check_results.md）补全 respond 节点修复。① `ReactResponse.message` 默认值从兜底字符串改为 `""`（llm_outputs.py），使 plain invoke fallback 能够正确触发；② read_memory 工具触发机制已在第一轮修复中验证生效（NM-01b/NM-04b workflow_trace 含 tools + chatbot 2 次迭代）。
 - 仍待处理：无
 - 下一个 session 启动时先看什么：todo 已清空，建议跑第三轮验收确认 NM-01b/NM-02b/NM-04b message 内容正确（不再为兜底值）。
+
+## 2026-04-12
+- 今天做了什么：四项修复与优化。① **视觉路由修复**：新增 `direct_answer` no-op 工具，LLM 在图片/简单问题时可显式选择直接回答，`ReasonNode._override_act_from_selected_tool` 识别后映射为 `direct` act，`tutor_prompts` 注入最高优先级 Vision policy（has_image/has_image_from_history 时图片类问题 MUST 调 direct_answer），prompt 新增 `Has image from history` 字段（`_has_image_in_history` 回溯历史轮次），`graph.should_continue_react` 增加 skill 成功后直接跳 respond。② **LLM schema 稳定性**：`_call_llm_json` 新增 `_build_schema_hint`，生成精确字段提示避免 qwen 等模型自造字段名或类型。③ **图片历史透传**：`_call_with_bind_tools` 改用 `_build_image_content_from_request_or_history`，reason 阶段也能看到历史轮次图片。④ **前端图片展示**：用户消息气泡直接渲染 `<img>` 标签替代 "Image URL attached." 占位文本，同时支持 image_url 和 image_base64 两种来源。另：parent_summary skill 触发条件收紧（明确排除图片/通识问题）；plan_prompts 步骤标记改为仅多步骤教育场景使用；README 全面重写为 v1.6 双框架架构描述；新增多处 debug dump 日志提升可观测性。
+- 仍待处理：无
+- 下一个 session 启动时先看什么：手工验证图片问答（发送图片 URL + "这是什么"），确认不再触发 retrieve_knowledge / parent_summary，直接走 direct_answer 路径生成回复。

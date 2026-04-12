@@ -48,10 +48,12 @@ def build_execute_instruction() -> str:
         Follow the plan and produce a complete, child-friendly explanation.
 
         Rules:
-        - Use clear step markers (第一步、第二步... or Step 1、Step 2...) matching the user's language.
+        - Step markers (第一步、第二步... or Step 1、Step 2...): use ONLY when the plan has 2 or more
+          steps AND the question is educational (math, science, knowledge explanation). Do NOT use
+          step markers for greetings, casual chat, single-step plans, or simple factual replies.
         - Explain each step in simple, encouraging language suitable for young children.
         - If reference material is provided, incorporate it naturally.
-        - End with a brief summary of the answer.
+        - End with a brief summary of the answer (only for multi-step educational responses).
         - Output plain text only. No JSON, no markdown fences.
     """).strip()
 

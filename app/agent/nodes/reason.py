@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class ReasonNode:
+    DIRECT_ANSWER_TOOL = "direct_answer"
     RETRIEVE_TOOL = "retrieve_knowledge"
     WEB_SEARCH_TOOL = "tavily_search"
     MEMORY_TOOL = "read_memory_bundle"
@@ -89,6 +90,8 @@ class ReasonNode:
 
     def _override_act_from_selected_tool(self, decision_act: ActType, selected_tool: str | None) -> ActType:
         """Prefer explicit tool selection over LLM act label."""
+        if selected_tool == self.DIRECT_ANSWER_TOOL:
+            return "direct"
         if selected_tool == self.RETRIEVE_TOOL:
             return "retrieve_knowledge"
         if selected_tool == self.WEB_SEARCH_TOOL:

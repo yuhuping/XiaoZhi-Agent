@@ -832,20 +832,6 @@
     }
 
     function appendUserMessage(payload) {
-      const parts = [];
-      if (payload.text) {
-        parts.push(payload.text);
-      }
-      if (payload.image_url) {
-        parts.push("Image URL attached.");
-      }
-      if (payload.image_base64) {
-        parts.push(`Uploaded image: ${uploadedImage.fileName || "attached image"}`);
-      }
-      if (!parts.length) {
-        parts.push("(empty input)");
-      }
-
       const row = document.createElement("div");
       row.className = "message-row user";
 
@@ -858,7 +844,43 @@
 
       const bubble = document.createElement("div");
       bubble.className = "bubble user";
-      bubble.textContent = parts.join("\n\n");
+
+      // 文本部分
+      if (payload.text) {
+        const textNode = document.createElement("span");
+        textNode.textContent = payload.text;
+        bubble.appendChild(textNode);
+      }
+
+      // image_url：直接展示图片
+      if (payload.image_url) {
+        if (payload.text) {
+          bubble.appendChild(document.createElement("br"));
+          bubble.appendChild(document.createElement("br"));
+        }
+        const img = document.createElement("img");
+        img.src = payload.image_url;
+        img.alt = "attached image";
+        img.style.cssText = "max-width:100%;max-height:300px;border-radius:8px;display:block;";
+        bubble.appendChild(img);
+      }
+
+      // image_base64：展示上传的图片
+      if (payload.image_base64) {
+        if (payload.text || payload.image_url) {
+          bubble.appendChild(document.createElement("br"));
+          bubble.appendChild(document.createElement("br"));
+        }
+        const img = document.createElement("img");
+        img.src = `data:image/jpeg;base64,${payload.image_base64}`;
+        img.alt = uploadedImage.fileName || "attached image";
+        img.style.cssText = "max-width:100%;max-height:300px;border-radius:8px;display:block;";
+        bubble.appendChild(img);
+      }
+
+      if (!bubble.hasChildNodes()) {
+        bubble.textContent = "(empty input)";
+      }
 
       const avatar = document.createElement("div");
       avatar.className = "avatar user";

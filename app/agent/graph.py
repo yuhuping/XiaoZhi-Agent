@@ -43,6 +43,9 @@ def should_continue_react(state: AgentState) -> str:
         return "respond"
     if state.get("selected_act") == "direct":
         return "respond"
+    # skill 工具执行一次即可，成功后直接生成回复
+    if state.get("selected_act") == "skill" and state.get("tool_success"):
+        return "respond"
     return "reason"
 
 

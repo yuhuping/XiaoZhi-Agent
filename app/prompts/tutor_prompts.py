@@ -17,10 +17,12 @@ def build_reason_instruction(mode: InteractionMode) -> str:
         "Decide whether to answer directly or call one bound tool when grounding or memory lookup is needed.",
         "If prior tool observation already provides enough information, answer directly instead of calling another tool.",
         "Do not repeat the same tool for the same user request unless the previous tool call clearly failed or returned insufficient information.",
+        "Vision policy (highest priority):",
+        "- If has_image=yes OR has_image_from_history=yes, and the user is asking about the image content (e.g. '这是什么', '这是谁', '帮我看', '图里是什么', '有几只', '在做什么', 'what is this', 'what do you see'), call direct_answer. Do NOT call retrieve_knowledge, tavily_search, or any other tool.",
         "Tool policy:",
         "- retrieve_knowledge: use for stable educational facts and non-time-sensitive knowledge.",
         "- tavily_search: use for recent, time-sensitive, current-event, or future information.",
-        "- read_memory_bundle: MUST call when the user asks about their own preferences, past behavior, things they have said/liked/done before, or any cross-session history — AND current Memory is empty AND Recent history has no prior turns. Do NOT guess or fabricate answers from an empty context; always fetch memory first.",
+        "- read_memory_bundle: Call ONLY when the user asks about their own preferences, past behavior, things they have said/liked/done before, or any cross-session history — AND current Memory is empty AND Recent history has no prior turns. Do NOT guess or fabricate answers from an empty context; always fetch memory first.",
         "Temporal policy:",
         "- For weather/news/current-event requests with relative time words (today, tonight, tomorrow), prefer tavily_search.",
         "- Interpret relative time against current local datetime, not memory history.",
@@ -44,9 +46,10 @@ def _build_reason_mode_rule(mode: InteractionMode) -> str:
 
 def _build_parent_summary_policy_lines() -> list[str]:
     return [
-        "Parent summary policy (MUST follow):",
-        "- If the parent's message asks about a child's learning, progress, recent activities, or a summary/report, call generate_parent_summary.",
+        "Parent summary policy:",
+        "- Call generate_parent_summary ONLY when the parent explicitly asks about a child's learning progress, recent activities, or requests a summary/report.",
         "- Typical examples: '总结孩子情况', '孩子最近学了什么', '帮我看看孩子进展', '查一下孩子的学习情况'.",
+        "- Do NOT call this tool if the user is asking about an image, a general knowledge question, or anything unrelated to child progress reports.",
         "- Do NOT answer from memory alone for these summary requests. Call the tool first.",
         "- Extract the child's name from the message and pass it as child_name.",
         "- If no child name is mentioned, pass child_name='default_child'.",
@@ -63,6 +66,7 @@ def build_reason_user_prompt(chat_request: ChatRequest, state: AgentState) -> st
         User text: {(chat_request.text or "").strip() or "No text provided."}
         Current local datetime: {_current_local_datetime_hint()}
         Has image: {"yes" if chat_request.image_base64 or chat_request.image_url else "no"}
+        Has image from history: {"yes" if _has_image_in_history(state) else "no"}
         Current topic: {state.get("current_topic") or state.get("topic_hint") or "unknown"}
         Last assistant question: {state.get("last_agent_question") or "none"}
         Perception signals: {", ".join(state.get("perception_signals", [])) or "none"}
@@ -132,6 +136,20 @@ def build_response_user_prompt(
         {_format_history(state)}
         """
     ).strip()
+
+
+def _has_image_in_history(state: AgentState) -> bool:
+    history = state.get("history", [])
+    if not isinstance(history, list):
+        return False
+    for turn in reversed(history):
+        if not isinstance(turn, dict):
+            continue
+        if (isinstance(turn.get("image_base64"), str) and turn["image_base64"].strip()) or (
+            isinstance(turn.get("image_url"), str) and turn["image_url"].strip()
+        ):
+            return True
+    return False
 
 
 def _format_history(state: AgentState) -> str:

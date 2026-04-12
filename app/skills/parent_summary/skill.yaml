@@ -1,8 +1,9 @@
 name: parent_summary
 display_name: 家长侧摘要生成
 description: >
-  MUST be called when the parent asks about a child's learning, progress, recent activities,
+  Call ONLY when the parent explicitly asks about a child's learning progress, recent activities,
   or requests a summary/report (e.g. '查一下孩子的学习情况', '总结孩子进展', '孩子最近学了什么').
+  Do NOT call for image questions, general knowledge questions, or anything unrelated to child progress.
   Fetches memory records from the database and generates a structured summary.
   Extract the child's name from the parent's message and pass it as child_name;
   use 'default_child' if no name is mentioned.

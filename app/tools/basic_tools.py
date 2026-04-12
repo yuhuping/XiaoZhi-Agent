@@ -51,6 +51,12 @@ class ReadMemoryInput(BaseModel):
     profile_id: str
 
 
+class DirectAnswerInput(BaseModel):
+    """直接回答，无需调用任何外部工具。"""
+
+    reason: str = Field(default="", description="Brief reason why direct answer is sufficient.")
+
+
 @dataclass(frozen=True)
 class ToolCall:
     """工具调用参数。"""
@@ -110,6 +116,18 @@ class BasicTools:
         """构建LangGraph工具定义。"""
         return [
             StructuredTool.from_function(
+                func=self._langgraph_direct_answer,
+                name="direct_answer",
+                description=(
+                    "Use when you can answer directly from your own knowledge or vision "
+                    "without needing external search or memory lookup. "
+                    "Typical cases: image questions ('这是什么', 'what is this'), "
+                    "simple factual questions you already know, or follow-up questions "
+                    "where prior observation already provides enough context."
+                ),
+                args_schema=DirectAnswerInput,
+            ),
+            StructuredTool.from_function(
                 func=self._langgraph_retrieve_knowledge,
                 name="retrieve_knowledge",
                 description="Retrieve children's encyclopedic facts from local knowledge base. "
@@ -129,6 +147,10 @@ class BasicTools:
                 args_schema=ReadMemoryInput,
             ),
         ]
+
+    def _langgraph_direct_answer(self, reason: str = "") -> str:
+        """direct_answer 工具的 no-op 实现，ReasonNode 会将其拦截为 direct act，不会真正执行。"""
+        return ""
 
     def _langgraph_retrieve_knowledge(
         self,
