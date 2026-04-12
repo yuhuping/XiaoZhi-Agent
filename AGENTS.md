@@ -9,5 +9,5 @@ Memory 具体实现文档见docs/architecture/memory.md
 Tools
 
 ## Tips:
-1.当前项目环境配置在./.venv里面
+1.当前项目环境配置在.venv里面
 2.有些注释的print不要删除了，我留着手动debug
