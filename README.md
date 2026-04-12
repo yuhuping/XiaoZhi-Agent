@@ -84,7 +84,7 @@ reason -> (tools -> observe -> reason)* -> respond
 - [Graph 架构](./docs/architecture/graph.md)
 - [RAG 架构](./docs/architecture/rag.md)
 - [Memory 架构](./docs/architecture/memory.md)
-- [v1.6 双框架设计](./docs/superpowers/specs/2026-04-09-v1.6-dual-framework-design.md)
+
 
 ## 目录结构
 
@@ -179,60 +179,7 @@ LANGSMITH_PROJECT=XiaoZhi
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-启动后可访问：
-
-- `http://127.0.0.1:8000/`：内置 playground
-- `http://127.0.0.1:8000/health`：健康检查
-
-## 接口说明
-
-### 聊天接口
-
-`POST /api/v1/chat/explain-and-ask`
-
-这是一个 `SSE` 流式接口，响应内容会按事件持续返回：
-
-- `{"delta": "..."}`：增量文本
-- `{"done": true}`：流结束
-
-请求体示例：
-
-```json
-{
-  "text": "为什么月亮有时候是圆的，有时候不是？",
-  "mode": "education",
-  "age_hint": "7",
-  "session_id": "demo-session-001",
-  "profile_id": "default_child"
-}
-```
-
-使用 `curl` 调试：
-
-```bash
-curl -N \
-  -X POST "http://127.0.0.1:8000/api/v1/chat/explain-and-ask" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "帮我总结一下小明最近学了什么",
-    "mode": "parent",
-    "session_id": "demo-parent-session",
-    "profile_id": "default_parent"
-  }'
-```
-
-### 支持的输入字段
-
-- `text`：文本输入，可为空，但文本和图片不能同时都为空
-- `image_base64`：Base64 图片内容
-- `image_url`：公网图片地址
-- `image_mime_type`：上传 Base64 图片时必填，支持 `image/png`、`image/jpeg`、`image/webp`
-- `mode`：`education | companion | parent`
-- `age_hint`：年龄提示
-- `session_id`：会话 ID
-- `profile_id`：画像 ID
-
-## 模式与工具
+## 其它
 
 ### Education 模式
 
@@ -288,30 +235,6 @@ curl -N \
 ```env
 MEMORY_RESET_ON_START=false
 ```
-
-## 测试
-
-当前仓库已包含以下测试：
-
-- `tests/test_plan_execute.py`
-- `tests/test_react_loop.py`
-- `tests/test_graph_routing.py`
-- `tests/test_chat_sse_streaming.py`
-- `tests/test_memory_update_node.py`
-- `tests/test_reason_node.py`
-
-运行方式：
-
-```bash
-source .venv/bin/activate
-pytest
-```
-
-## 开发提示
-
-- 项目会在启动时自动创建 `ChatService`，并装配 `ModelService`、`MemoryManager`、`LocalKnowledgeRetriever`、`SkillRegistry` 等依赖。
-- `README` 中描述的是当前代码已落地的能力，不代表所有设计稿都已完全产品化。
-- 仓库里保留了一些用于手动调试的注释 `print`，不要在整理代码时误删。
 
 ## Support
 
