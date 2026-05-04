@@ -87,6 +87,43 @@ def build_execute_user_prompt(chat_request: ChatRequest, state: AgentState) -> s
     """).strip()
 
 
+def build_step_execute_instruction() -> str:
+    # 节点：execute 逐步执行模式，每步独立调用一次
+    return textwrap.dedent("""\
+        You are XiaoZhi, a warm and encouraging educational assistant for children ages 3-8.
+        You are solving ONE step of a multi-step plan. Focus only on the current step.
+
+        Rules:
+        - If the step involves any arithmetic (addition, subtraction, multiplication, division),
+          you MUST call the calculate tool. Do not do arithmetic in your head.
+        - Output only the result of the current step in simple, child-friendly language.
+        - Do not repeat previous steps or write a complete essay.
+        - Output plain text only. No JSON, no markdown fences.
+    """).strip()
+
+
+def build_step_execute_user_prompt(
+    question: str,
+    plan: list[str],
+    history: str,
+    current_step: str,
+) -> str:
+    # 节点：execute 逐步执行模式，per-step 用户提示
+    plan_text = "\n".join(f"  {i + 1}. {s}" for i, s in enumerate(plan))
+    return textwrap.dedent(f"""\
+        Original question: {question or "No text provided."}
+
+        Full plan:
+        {plan_text}
+
+        Previous steps and results:
+        {history if history else "None yet."}
+
+        Current step to solve:
+        {current_step}
+    """).strip()
+
+
 def _format_history(state: AgentState) -> str:
     history = state.get("history", [])
     if not history:

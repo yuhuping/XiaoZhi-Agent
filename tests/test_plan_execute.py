@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.agent.nodes.execute import ExecuteNode
 from app.agent.nodes.plan import PlanNode
+from app.tools.calculate import safe_calculate
 
 
 def _make_state(**overrides: Any) -> dict[str, Any]:
@@ -125,3 +126,129 @@ class TestPlanNodeFallback:
 
         assert result["selected_act"] == "direct"
         assert len(result["plan_steps"]) >= 1  # at least fallback step
+
+
+class TestSafeCalculate:
+    def test_basic_arithmetic_with_brackets(self) -> None:
+        result = safe_calculate("(123+456)*789/12")
+        expected = str(int((123 + 456) * 789 // 12)) if (123 + 456) * 789 % 12 == 0 else str((123 + 456) * 789 / 12)
+        assert result == expected
+
+    def test_integer_result_strips_dot_zero(self) -> None:
+        assert safe_calculate("6/2") == "3"
+        assert safe_calculate("10-3") == "7"
+
+    def test_division_by_zero_returns_error(self) -> None:
+        result = safe_calculate("1/0")
+        assert "错误" in result
+
+    def test_empty_expression_returns_error(self) -> None:
+        result = safe_calculate("")
+        assert "错误" in result
+
+    def test_disallowed_power_operator_returns_error(self) -> None:
+        result = safe_calculate("2**8")
+        assert "错误" in result
+
+    def test_whitespace_expression_returns_error(self) -> None:
+        result = safe_calculate("   ")
+        assert "错误" in result
+
+    def test_negative_unary(self) -> None:
+        assert safe_calculate("-5+10") == "5"
+
+
+class TestExecutePlanStepByStep:
+    """Tests for model_service.execute_plan step-by-step logic."""
+
+    def _make_chat_request(self, text: str = "计算3+5") -> Any:
+        req = MagicMock()
+        req.text = text
+        req.image_base64 = None
+        req.image_url = None
+        req.age_hint = "3-8"
+        req.mode = "education"
+        return req
+
+    def test_single_step_calls_execute_once_and_emits_delta(self) -> None:
+        """Single-step plan: _execute_step_with_tools called once, on_delta passed."""
+        from app.services.model_service import ModelService
+
+        chat_request = self._make_chat_request()
+        state = _make_state(plan_steps=["计算3+5"])
+        delta_writer = AsyncMock()
+        mock_step = AsyncMock(return_value="3+5=8")
+
+        svc = object.__new__(ModelService)
+        svc._openai_call_semaphore = asyncio.Semaphore(1)
+        svc._execute_step_with_tools = mock_step
+
+        result = asyncio.run(svc.execute_plan(chat_request, state, on_delta=delta_writer))
+
+        assert result == "3+5=8"
+        mock_step.assert_called_once()
+        call_kwargs = mock_step.call_args.kwargs
+        assert call_kwargs["on_delta"] is delta_writer
+
+    def test_two_steps_history_passed_to_second_step(self) -> None:
+        """Two-step plan: second step prompt contains first step's result."""
+        chat_request = self._make_chat_request()
+        state = _make_state(plan_steps=["计算123+456", "用孩子语言解释结果"])
+        captured_prompts: list[str] = []
+
+        async def fake_step(instruction: str, prompt: str, **kwargs: Any) -> str:
+            captured_prompts.append(prompt)
+            return "步骤结果"
+
+        from app.services.model_service import ModelService
+        svc = object.__new__(ModelService)
+        svc._openai_call_semaphore = asyncio.Semaphore(1)
+        svc._execute_step_with_tools = fake_step  # type: ignore[method-assign]
+
+        asyncio.run(svc.execute_plan(chat_request, state))
+
+        assert len(captured_prompts) == 2
+        assert "步骤1:" in captured_prompts[1]  # history from step 1 in step 2's prompt
+
+    def test_on_delta_only_passed_to_last_step(self) -> None:
+        """on_delta is None for all steps except the last."""
+        chat_request = self._make_chat_request()
+        state = _make_state(plan_steps=["步骤A", "步骤B", "步骤C"])
+        delta_writer = AsyncMock()
+        captured_deltas: list[Any] = []
+
+        async def fake_step(instruction: str, prompt: str, on_delta: Any = None, **kwargs: Any) -> str:
+            captured_deltas.append(on_delta)
+            return "ok"
+
+        from app.services.model_service import ModelService
+        svc = object.__new__(ModelService)
+        svc._openai_call_semaphore = asyncio.Semaphore(1)
+        svc._execute_step_with_tools = fake_step  # type: ignore[method-assign]
+
+        asyncio.run(svc.execute_plan(chat_request, state, on_delta=delta_writer))
+
+        assert captured_deltas[0] is None
+        assert captured_deltas[1] is None
+        assert captured_deltas[2] is delta_writer
+
+    def test_empty_plan_steps_uses_single_fallback(self) -> None:
+        """Empty plan_steps falls back to one default step."""
+        chat_request = self._make_chat_request()
+        state = _make_state(plan_steps=[])
+        call_count = 0
+
+        async def fake_step(**kwargs: Any) -> str:
+            nonlocal call_count
+            call_count += 1
+            return "fallback"
+
+        from app.services.model_service import ModelService
+        svc = object.__new__(ModelService)
+        svc._openai_call_semaphore = asyncio.Semaphore(1)
+        svc._execute_step_with_tools = fake_step  # type: ignore[method-assign]
+
+        result = asyncio.run(svc.execute_plan(chat_request, state))
+
+        assert call_count == 1
+        assert result == "fallback"

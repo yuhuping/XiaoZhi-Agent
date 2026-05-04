@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from langsmith import trace, tracing_context
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
@@ -27,7 +27,10 @@ from app.prompts.plan_prompts import (
     build_execute_user_prompt,
     build_plan_instruction,
     build_plan_user_prompt,
+    build_step_execute_instruction,
+    build_step_execute_user_prompt,
 )
+from app.tools.calculate import calculate_tool
 from app.prompts.tutor_prompts import (
     build_reason_instruction,
     build_reason_user_prompt,
@@ -287,33 +290,81 @@ class ModelService:
         state: AgentState,
         on_delta: DeltaCallback | None = None,
     ) -> str:
-        """Execute a plan by streaming the solution. Returns the full text."""
-        instruction = build_execute_instruction()
-        prompt = build_execute_user_prompt(chat_request, state)
-        human_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-        image_content = self._build_image_content_from_request_or_history(chat_request, state)
-        if image_content is not None:
-            human_content.append(image_content)
-            llm = self._get_planning_vision_llm()
-        else:
-            llm = self._get_planning_text_llm()
+        """Execute plan step-by-step. Each step gets its own LLM call with calculate tool."""
+        plan_steps: list[str] = state.get("plan_steps") or ["直接回答用户问题"]
+        question = (chat_request.text or "").strip() or "No text provided."
+        instruction = build_step_execute_instruction()
+        history = ""
+        step_result = ""
 
-        fragments: list[str] = []
-        async for chunk in llm.astream(
-            [
-                SystemMessage(content=instruction),
-                HumanMessage(content=human_content),
-            ]
-        ):
-            delta = self._extract_stream_chunk_text(chunk.content)
-            if not delta:
-                continue
-            fragments.append(delta)
-            if on_delta:
-                emitted = on_delta(delta)
-                if inspect.isawaitable(emitted):
-                    await emitted
-        return "".join(fragments).strip()
+        async with self._openai_call_semaphore:
+            for i, step in enumerate(plan_steps, 1):
+                is_last = i == len(plan_steps)
+                prompt = build_step_execute_user_prompt(
+                    question=question,
+                    plan=plan_steps,
+                    history=history,
+                    current_step=step,
+                )
+                step_result = await self._execute_step_with_tools(
+                    instruction=instruction,
+                    prompt=prompt,
+                    chat_request=chat_request,
+                    tools=[calculate_tool],
+                    on_delta=on_delta if is_last else None,
+                )
+                history += f"步骤{i}: {step}\n结果: {step_result}\n"
+                logger.info("[execute_plan] step=%d/%d result_preview=%r", i, len(plan_steps), step_result[:80])
+
+        return step_result.strip()
+
+    async def _execute_step_with_tools(
+        self,
+        instruction: str,
+        prompt: str,
+        chat_request: ChatRequest,
+        tools: list[StructuredTool],
+        on_delta: DeltaCallback | None = None,
+        max_tool_rounds: int = 5,
+    ) -> str:
+        """Run one plan step with a tool-call loop. Returns the step's text result."""
+        human_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        image_content = self._build_image_content_from_request_or_history(chat_request, {})
+        if image_content:
+            human_content.append(image_content)
+        base_llm = self._get_planning_vision_llm() if image_content else self._get_planning_text_llm()
+        runnable = base_llm.bind_tools(tools)
+
+        messages: list[Any] = [
+            SystemMessage(content=instruction),
+            HumanMessage(content=human_content),
+        ]
+        response: AIMessage | None = None
+        for _ in range(max_tool_rounds):
+            response = await runnable.ainvoke(messages)
+            messages.append(response)
+            if not response.tool_calls:
+                text = self._extract_ai_text(response)
+                if on_delta and text:
+                    emitted = on_delta(text)
+                    if inspect.isawaitable(emitted):
+                        await emitted
+                return text
+            for tc in response.tool_calls:
+                tool_result = self._dispatch_tool(tc.get("name", ""), tc.get("args", {}), tools)
+                messages.append(ToolMessage(content=tool_result, tool_call_id=tc.get("id", "")))
+
+        return self._extract_ai_text(response) if isinstance(response, AIMessage) else "步骤执行超过最大轮次。"
+
+    def _dispatch_tool(self, name: str, args: dict[str, Any], tools: list[StructuredTool]) -> str:
+        """Invoke a tool by name from the provided list. Returns string result."""
+        for tool in tools:
+            if tool.name == name:
+                try:
+                    return str(tool.invoke(args))
+                except Exception as exc:
+                    return f"工具错误: {exc}"
+        return f"工具错误: 不支持的工具 '{name}'。"
 
     async def _stream_final_response_text(
         self,

@@ -1,8 +1,15 @@
 {
-  "version": "v1.6",
+  "version": "v1.7",
   "todo": [],
   "in_progress": [],
   "done": [
+    {
+      "id": "v1.7-plan-execute-step-by-step",
+      "title": "Execute 节点改为逐步执行（真正的 Plan-and-Execute）",
+      "priority": "P1",
+      "status": "done",
+      "summary": "execute_plan 改写为逐步循环：每个 plan_step 独立调用 _execute_step_with_tools，每步通过 bind_tools 绑定 calculate 工具（安全 AST eval，支持 + - * /），LLM 遇到四则运算调用工具而非心算，工具结果以 ToolMessage 注入后 re-invoke；每步结果累积进 history 传给下一步，形成真正步骤间依赖；on_delta 仅传给最后一步。新增 app/tools/calculate.py（独立文件避免循环导入）、plan_prompts 新增两个 per-step 提示构建函数、新增 TestSafeCalculate + TestExecutePlanStepByStep 测试类，全部 16 测试通过。"
+    },
     {
       "id": "fix-respond-json-mode-empty-message",
       "title": "respond 节点非流式路径 json_mode 空 message 修复",

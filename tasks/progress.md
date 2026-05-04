@@ -4,6 +4,15 @@
 
 ---
 
+# v1.7
+
+## 2026-05-04
+- 今天做了什么：完成 P1 `v1.7-plan-execute-step-by-step`（Execute 节点真正的 Plan-and-Execute 逐步执行）。核心改动：① 新建 `app/tools/calculate.py`，实现安全 AST eval 四则运算工具（无项目内部导入，避免 basic_tools→model_service 循环依赖）；② `plan_prompts.py` 新增 `build_step_execute_instruction` 和 `build_step_execute_user_prompt` 两个 per-step 提示；③ `model_service.execute_plan` 从单次 astream 重写为步骤循环，每步调用 `_execute_step_with_tools`（bind_tools + 最多 5 轮工具 re-invoke），步骤结果累积进 history 传给下一步，on_delta 仅传最后一步；④ 新增 `TestSafeCalculate`（纯函数测试）和 `TestExecutePlanStepByStep`（步骤逻辑测试），16/16 测试通过。面试被质疑"execute 只有一次 LLM 调用"的问题在此版本中完全修复。
+- 仍待处理：无
+- 下一个 session 启动时先看什么：todo 已清空，可集成验证数学题场景（education 模式发"计算(123+456)×789/12"，观察日志中 [execute_plan] step=N/N 多步输出及 calculate 工具调用）。
+
+---
+
 # v1.4
 
 ## 2026-03-31
