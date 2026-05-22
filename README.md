@@ -10,6 +10,7 @@
     <img src="https://img.shields.io/badge/RAG-FAISS%20Local%20Retrieval-0467DF?style=flat-square" alt="RAG" />
     <img src="https://img.shields.io/badge/Memory-Working%20%2B%20Long--Term-E92063?style=flat-square" alt="Memory" />
     <img src="https://img.shields.io/badge/Skills-Parent%20Summary-D96D43?style=flat-square" alt="Skills" />
+    <img src="https://img.shields.io/badge/Built%20with-CodeBuddy-0052D9?style=flat-square" alt="Built with CodeBuddy" />
   </p>
 
   <p><strong>面向儿童教育、陪伴交流与家长辅助的智慧教育 Agent</strong></p>
@@ -19,6 +20,8 @@
 ---
 
 ## 项目简介
+
+> **本项目使用 [CodeBuddy](https://www.codebuddy.ai/) AI 编程助手开发完成。** CodeBuddy 提供了智能代码补全、架构设计辅助、自动化测试与文档生成等能力，显著提升了 Agent 系统的开发效率。
 
 小智不是一个只会直接给答案的聊天机器人，而是尝试按不同角色切换不同推理方式：
 
