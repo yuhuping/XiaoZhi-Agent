@@ -129,7 +129,7 @@ class LocalKnowledgeRetriever:
 
     def retrieve(self, query: str, top_k: int, min_score: float) -> list[dict[str, object]]:
         """向量检索入口：保持返回字段兼容 basic_tools"""
-        print(f'self.embedding_available:{self.embedding_available}')
+        # print(f'self.embedding_available:{self.embedding_available}')
         if not self.embedding_available:
             return []
         query = (query or "").strip()
@@ -137,7 +137,7 @@ class LocalKnowledgeRetriever:
             return []
         if not self.chunks or self._faiss_index is None or self._faiss_index.ntotal == 0:
             return []
-        print(f'self._faiss_index.ntotal:{self._faiss_index.ntotal}')
+        # print(f'self._faiss_index.ntotal:{self._faiss_index.ntotal}')
 
         query_vec = self._embed_texts([query])
         if query_vec.shape[0] == 0:

@@ -42,6 +42,8 @@ Thumbs.db
 data/
 *.sqlite3
 
+RAGeval/results/
+
 
 tests/
 tasks/
