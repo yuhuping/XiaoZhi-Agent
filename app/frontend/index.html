@@ -770,7 +770,7 @@
           <label for="template-select">模板</label>
           <select id="template-select">
             <option value="">选择模板</option>
-            <option value="text-only">学习路线：蜗牛的壳</option>
+            <option value="text-only">数学分步：积木问题</option>
             <option value="text-plus-image">图文理解：图片识别</option>
           </select>
         </div>
@@ -1486,7 +1486,7 @@
       clearImageSelection(true);
 
       if (templateName === "text-only") {
-        elements.text.value = "为什么蜗牛要背着一个壳？请带我一步一步找到答案。";
+        elements.text.value = "小智有18块积木，用6块搭桥，剩下的平均分给3个小伙伴，每人几块？请一步一步算。";
         elements.modeSelect.value = "education";
         elements.ageHint.value = DEFAULT_AGE_HINT;
         syncProfileIdWithMode();
