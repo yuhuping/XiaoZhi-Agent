@@ -58,6 +58,34 @@ class TestPlanNode:
         assert len(result["messages"]) == 1
         assert result["messages"][0].tool_calls  # has tool_calls
 
+    def test_plan_emits_public_workflow_events(self) -> None:
+        fake_plan = {
+            "steps": ["观察蜗牛壳的样子", "查找壳的作用", "用小实验总结"],
+            "needs_retrieval": True,
+            "retrieval_query": "蜗牛 壳 作用",
+        }
+        tools = AsyncMock()
+        tools.generate_plan = AsyncMock(return_value=fake_plan)
+        event_writer = AsyncMock()
+
+        asyncio.run(PlanNode(tools)(_make_state(stream_event_writer=event_writer)))
+
+        events = [call.args[0] for call in event_writer.await_args_list]
+        assert events[0] == {
+            "type": "workflow",
+            "event": "planning_started",
+            "phase": "planning",
+            "status": "active",
+            "title": "正在规划学习路线",
+        }
+        assert events[1]["phase"] == "planning"
+        assert events[1]["status"] == "completed"
+        assert events[1]["steps"] == fake_plan["steps"]
+        assert events[1]["needs_retrieval"] is True
+        assert events[2]["phase"] == "retrieval"
+        assert events[2]["status"] == "active"
+        assert "retrieval_query" not in events[2]
+
     def test_plan_no_retrieval_goes_direct(self) -> None:
         """Plan with needs_retrieval=False should set selected_act=direct, no tool_calls."""
         fake_plan = {
@@ -111,6 +139,30 @@ class TestExecuteNode:
 
         assert result["execution_result"] == "答案是42。"
         assert result["message_draft"] == "答案是42。"
+
+    def test_execute_emits_completion_event(self) -> None:
+        tools = AsyncMock()
+        tools.execute_plan = AsyncMock(return_value="学习完成。")
+        event_writer = AsyncMock()
+
+        asyncio.run(
+            ExecuteNode(tools)(
+                _make_state(
+                    plan_steps=["观察", "理解"],
+                    stream_event_writer=event_writer,
+                )
+            )
+        )
+
+        event_writer.assert_awaited_once_with(
+            {
+                "type": "workflow",
+                "event": "workflow_completed",
+                "phase": "complete",
+                "status": "completed",
+                "title": "学习路线已完成",
+            }
+        )
 
 
 class TestPlanNodeFallback:
@@ -171,7 +223,7 @@ class TestExecutePlanStepByStep:
         return req
 
     def test_single_step_calls_execute_once_and_emits_delta(self) -> None:
-        """Single-step plan: _execute_step_with_tools called once, on_delta passed."""
+        """Single-step plan executes once and emits its real result."""
         from app.services.model_service import ModelService
 
         chat_request = self._make_chat_request()
@@ -188,7 +240,8 @@ class TestExecutePlanStepByStep:
         assert result == "3+5=8"
         mock_step.assert_called_once()
         call_kwargs = mock_step.call_args.kwargs
-        assert call_kwargs["on_delta"] is delta_writer
+        assert call_kwargs["on_delta"] is None
+        delta_writer.assert_awaited_once_with("3+5=8")
 
     def test_two_steps_history_passed_to_second_step(self) -> None:
         """Two-step plan: second step prompt contains first step's result."""
@@ -210,27 +263,68 @@ class TestExecutePlanStepByStep:
         assert len(captured_prompts) == 2
         assert "步骤1:" in captured_prompts[1]  # history from step 1 in step 2's prompt
 
-    def test_on_delta_only_passed_to_last_step(self) -> None:
-        """on_delta is None for all steps except the last."""
+    def test_all_step_results_are_accumulated_and_streamed(self) -> None:
+        """Each real step result is accumulated into the final streamed answer."""
         chat_request = self._make_chat_request()
         state = _make_state(plan_steps=["步骤A", "步骤B", "步骤C"])
         delta_writer = AsyncMock()
         captured_deltas: list[Any] = []
 
+        call_index = 0
+
         async def fake_step(instruction: str, prompt: str, on_delta: Any = None, **kwargs: Any) -> str:
+            nonlocal call_index
             captured_deltas.append(on_delta)
-            return "ok"
+            call_index += 1
+            return f"结果{call_index}"
 
         from app.services.model_service import ModelService
         svc = object.__new__(ModelService)
         svc._openai_call_semaphore = asyncio.Semaphore(1)
         svc._execute_step_with_tools = fake_step  # type: ignore[method-assign]
 
-        asyncio.run(svc.execute_plan(chat_request, state, on_delta=delta_writer))
+        result = asyncio.run(svc.execute_plan(chat_request, state, on_delta=delta_writer))
 
         assert captured_deltas[0] is None
         assert captured_deltas[1] is None
-        assert captured_deltas[2] is delta_writer
+        assert captured_deltas[2] is None
+        streamed = "".join(call.args[0] for call in delta_writer.await_args_list)
+        assert streamed == result
+        assert "第1步 · 步骤A\n结果1" in result
+        assert "第3步 · 步骤C\n结果3" in result
+
+    def test_each_step_emits_active_and_completed_events(self) -> None:
+        chat_request = self._make_chat_request()
+        state = _make_state(plan_steps=["观察现象", "总结原因"])
+        event_writer = AsyncMock()
+        state["stream_event_writer"] = event_writer
+
+        async def fake_step(**kwargs: Any) -> str:
+            return "步骤结果"
+
+        from app.services.model_service import ModelService
+        svc = object.__new__(ModelService)
+        svc._openai_call_semaphore = asyncio.Semaphore(1)
+        svc._execute_step_with_tools = fake_step  # type: ignore[method-assign]
+
+        asyncio.run(svc.execute_plan(chat_request, state))
+
+        events = [call.args[0] for call in event_writer.await_args_list]
+        assert [(event["status"], event["step_index"]) for event in events] == [
+            ("active", 0),
+            ("completed", 0),
+            ("active", 1),
+            ("completed", 1),
+        ]
+        assert all(event["phase"] == "execution" for event in events)
+        assert [event["event"] for event in events] == [
+            "step_started",
+            "step_completed",
+            "step_started",
+            "step_completed",
+        ]
+        assert events[0]["title"] == "观察现象"
+        assert events[0]["step_count"] == 2
 
     def test_empty_plan_steps_uses_single_fallback(self) -> None:
         """Empty plan_steps falls back to one default step."""

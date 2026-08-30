@@ -1,241 +1,152 @@
 <div align="center">
-  <img src="app/logo.png" alt="XiaoZhi Logo" width="160" />
-
+  <img src="app/logo.png" alt="小智 logo" width="116" />
   <h1>小智 Agent</h1>
-
+  <p><strong>一个会因角色而改变学习方式的儿童教育与陪伴 Agent。</strong></p>
+  <p>面向 3–8 岁儿童的教育引导、日常陪伴与家长辅助，基于 LangGraph、RAG 与分层记忆构建。</p>
   <p>
-    <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" />
-    <img src="https://img.shields.io/badge/LangGraph-Dual%20Framework-1C3C3C?style=flat-square" alt="LangGraph" />
-    <img src="https://img.shields.io/badge/FastAPI-SSE%20Streaming-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
-    <img src="https://img.shields.io/badge/RAG-FAISS%20Local%20Retrieval-0467DF?style=flat-square" alt="RAG" />
-    <img src="https://img.shields.io/badge/Memory-Working%20%2B%20Long--Term-E92063?style=flat-square" alt="Memory" />
-    <img src="https://img.shields.io/badge/Skills-Parent%20Summary-D96D43?style=flat-square" alt="Skills" />
+    <a href="#-快速开始">快速开始</a> ·
+    <a href="#-三种角色三种交互方式">体验设计</a> ·
+    <a href="#-工作流概览">工作流</a>
   </p>
-
-  <p><strong>面向儿童教育、陪伴交流与家长辅助的智慧教育 Agent</strong></p>
-  <p>基于 LangGraph 的双框架工作流，融合 ReAct、Plan-and-Execute、RAG、Memory 与 Skill 扩展能力</p>
+  <p>
+    <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" />
+    <img src="https://img.shields.io/badge/LangGraph-Role--Aware%20Workflows-1C3C3C?style=flat-square" alt="LangGraph role-aware workflows" />
+    <img src="https://img.shields.io/badge/FastAPI-SSE%20Streaming-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI SSE streaming" />
+    <img src="https://img.shields.io/badge/RAG-FAISS%20Local%20Retrieval-2563EB?style=flat-square" alt="FAISS local retrieval" />
+    <img src="https://img.shields.io/badge/Memory-Working%20%2B%20Long--Term-E76F51?style=flat-square" alt="Working and long-term memory" />
+  </p>
 </div>
+
+<p align="center">
+  <img src="docs/assets/xiaozhi-playground-demo.gif" alt="小智 Playground 中 Plan and Execute 规划、检索与逐步执行演示" width="100%" />
+</p>
+
+<p align="center"><sub>教育模式通过同一 SSE 协议实时展示 <code>Planning → Retrieval → Step 1/2/3 → Complete</code>；演示使用确定性本地载荷录制，不代表线上模型的实际回答。</sub></p>
 
 ---
 
-## 项目简介
+## 🌱 不只是回答问题，而是选择合适的陪伴方式
 
-小智不是一个只会直接给答案的聊天机器人，而是尝试按不同角色切换不同推理方式：
+小智不把每一句输入都送入同一套推理流程。它会先理解输入并恢复记忆，再依据用户角色选择合适的子图：孩子学习时重视循序渐进，陪伴交流时维持自然的多轮对话，家长场景则能够从记忆中整理近期学习情况。
 
-- `education`：优先走 `Plan-and-Execute`，更强调分步骤讲解、启发式教学和过程引导。
-- `companion`：优先走多轮 `ReAct`，偏自然交流、轻陪伴和灵活回应。
-- `parent`：同样走多轮 `ReAct`，但会启用家长侧技能，例如根据记忆生成孩子近期学习摘要。
+| 模式 | 工作流 | 体验目标 |
+| --- | --- | --- |
+| `education` | Plan-and-Execute | 拆解知识点、适时检索、按步骤启发式讲解。 |
+| `companion` | 受控多轮 ReAct | 面向轻陪伴与日常交流，按需使用工具后继续推理。 |
+| `parent` | 受控多轮 ReAct + 家长技能 | 汇总学习记忆、处理家长侧问题，并可按需联网搜索。 |
 
-当前仓库已经演进为 `v1.6` 的双框架架构，不再是早期单一路径的 ReAct 原型。
+## ✨ 当前能力
 
-## 当前能力
+| 能力 | 说明 |
+| --- | --- |
+| 🧭 双框架路由 | 教育模式进入 `plan → (tools?) → execute`；陪伴/家长模式进入 `reason → tools → observe → respond` 循环。 |
+| 🖼️ 多模态输入 | 支持纯文本、图片 URL 与 Base64 图片；Playground 支持上传前压缩与预览。 |
+| 📚 本地知识库 | 从 `KG/` 加载 `.txt` / `.pdf`，使用 FAISS 建立本地索引。 |
+| 🧠 分层记忆 | 管理 `working`、`episodic`、`semantic`、`perceptual` 记忆，并支持恢复、压缩与遗忘。 |
+| 🔎 可选工具 | 包含本地检索、Tavily 联网搜索、记忆读取与 `generate_parent_summary` 家长摘要技能。 |
+| 🌊 流式体验 | FastAPI 通过 SSE 返回回答 `delta` 与用户安全的 workflow 事件；Playground 可见规划、检索和逐步执行状态。 |
 
-- `双框架路由`
-  - 教育模式自动路由到 `plan -> (tools?) -> execute`
-  - 陪伴 / 家长模式自动路由到多轮 `reason -> tools -> observe -> respond`
-- `多模态输入`
-  - 支持纯文本、图片 URL、Base64 图片
-- `本地 RAG`
-  - 从 `KG/` 目录加载 `.txt` / `.pdf`
-  - 使用 `FAISS` 建立本地向量索引
-- `分层记忆`
-  - `working / episodic / semantic / perceptual`
-  - 工作流内自动恢复上下文、写入长期记忆、执行遗忘/压缩
-- `联网搜索`
-  - 通过 `Tavily` 处理时效性或联网问题
-- `Skill 扩展`
-  - 已内置 `generate_parent_summary` 家长侧摘要技能
-- `流式前端`
-  - 根路径 `/` 内置 playground
-  - 聊天接口通过 `SSE` 流式返回 `delta`
-- `LangSmith 可观测性`
-  - 可选开启 tracing
+## 🗺️ 工作流概览
 
-## 架构概览
-
-顶层图会先做输入理解和记忆恢复，再按模式进入不同子图：
-
-```text
-START
-  -> understand
-  -> state_update
-  -> route_by_mode
-      -> education  -> plan_execute subgraph
-      -> companion  -> react subgraph
-      -> parent     -> react subgraph
-  -> memory_update
-  -> response
-  -> memory_compact
-  -> END
+```mermaid
+flowchart LR
+  I[文本 / 图片输入] --> U[理解输入]
+  U --> S[恢复并更新状态]
+  S --> R{角色模式}
+  R -->|education| P[生成学习计划]
+  P --> K{需要检索?}
+  K -->|yes| G[RAG / Search]
+  K -->|no| E[逐步执行]
+  G --> E
+  E --> X[累积每一步结果]
+  R -->|companion| C[ReAct]
+  R -->|parent| PA[ReAct + Parent Skill]
+  X --> M[更新记忆]
+  C --> M
+  PA --> M
+  M --> O[SSE 流式回复]
 ```
 
-两个核心子图：
+教育模式会在同一条响应流中依次发送 `planning_started`、`planning_completed`、`retrieval_*`、`step_started`、`step_completed` 与 `workflow_completed`。这些事件只包含可展示的步骤标签和状态，不暴露隐藏推理；每一步的真实结果都会累积进最终回答，而不是只保留最后一步。
 
-```text
-education:
-plan -> (retrieve_knowledge?) -> observe -> execute
+<details>
+  <summary><strong>查看完整架构图</strong></summary>
+  <br />
+  <p align="center"><img src="XiaoZ_Architecture.png" alt="小智 Agent 架构图" width="480" /></p>
+</details>
 
-companion / parent:
-reason -> (tools -> observe -> reason)* -> respond
-```
+详细设计说明：[
+Graph](./docs/architecture/graph.md) ·
+[RAG](./docs/architecture/rag.md) ·
+[Memory](./docs/architecture/memory.md)
 
-相关设计文档：
+## 🚀 快速开始
 
-- [Graph 架构](./docs/architecture/graph.md)
-- [RAG 架构](./docs/architecture/rag.md)
-- [Memory 架构](./docs/architecture/memory.md)
-
-
-## 目录结构
-
-```text
-XiaoZ/
-├── app/
-│   ├── agent/          # LangGraph 状态、节点、子图路由
-│   ├── api/            # FastAPI 路由
-│   ├── core/           # 配置、日志、LangSmith
-│   ├── frontend/       # 内置 playground
-│   ├── memory/         # 分层记忆系统
-│   ├── prompts/        # 各节点 prompt
-│   ├── rag/            # 本地知识检索与索引
-│   ├── schemas/        # 请求 / 响应结构
-│   ├── services/       # ChatService / ModelService
-│   ├── skills/         # 技能插件系统
-│   └── tools/          # RAG / Tavily / Memory 工具封装
-├── docs/               # 架构文档与设计稿
-├── tests/              # pytest 测试
-├── .env.example        # 环境变量示例
-└── requirements.txt    # Python 依赖
-```
-
-说明：
-
-- `KG/` 目录默认作为知识库目录；若不存在且 `KG_AUTO_BOOTSTRAP=true`，项目会自动创建最小示例语料。
-- `data/` 目录会在运行过程中按配置自动生成，用于保存记忆库和索引。
-- 项目当前虚拟环境已按仓库约定放在 `./.venv`。
-
-## 技术栈
-
-- `LangGraph`
-- `ReAct`
-- `Plan-and-Execute`
-- `FastAPI`
-- `Pydantic v2`
-- `FAISS`
-- `langchain-openai`
-- `LangSmith`
-
-## 快速开始
-
-### 1. 安装依赖
-
-如果你已经在仓库内配置好了 `./.venv`，建议直接使用它：
+**环境要求：** Python `3.10+`。
 
 ```bash
+git clone https://github.com/yuhuping/XiaoZhi-Agent.git
+cd XiaoZhi-Agent
+
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-### 2. 配置 `.env`
-
-项目会自动读取根目录下的 `.env`。可以基于 `.env.example` 复制一份：
-
-```bash
 cp .env.example .env
 ```
 
-最小可运行配置如下：
+在 `.env` 中配置最小模型连接：
 
-```env
+```dotenv
 LLM_BASE_URL=https://your-llm-endpoint
-LLM_API_KEY=your_llm_api_key
-LLM_MODEL=your_text_model
+LLM_API_KEY=your-llm-api-key
+LLM_MODEL=your-text-model
 ```
 
-如果你需要更多能力，可以继续补充：
-
-```env
-# 可选：视觉模型
-vllm_base_url=https://your-vision-endpoint
-vllm_api_key=your_vision_api_key
-vllm_model=your_vision_model
-
-# 可选：联网搜索
-TAVILY_API_KEY=your_tavily_api_key
-TAVILY_BASE_URL=https://api.tavily.com
-
-# 可选：RAG embedding（当前 retriever 独立读取该 key）
-RAG_embedding_model_key=your_rag_embedding_model_key
-
-# 可选：LangSmith 追踪
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=your_langsmith_api_key
-LANGSMITH_PROJECT=XiaoZhi
-```
-
-### 3. 启动服务
+启动服务后访问 `http://127.0.0.1:8000/`：
 
 ```bash
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-## 其它
+## ⚙️ 可选配置
 
-### Education 模式
+| 配置 | 何时需要 |
+| --- | --- |
+| `vllm_base_url` / `vllm_api_key` / `vllm_model` | 启用视觉模型能力时。 |
+| `TAVILY_API_KEY` / `TAVILY_BASE_URL` | 需要处理时效性问题或联网搜索时。 |
+| `RAG_embedding_model_key` | 使用本地 RAG embedding 时。 |
+| `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` | 需要追踪工作流与调试调用链时。 |
+| `MEMORY_RESET_ON_START=false` | 希望保留已有记忆库时；否则启动配置可能清空记忆。 |
 
-- 使用 `PlanNode` 先生成内部步骤
-- 需要时调用 `retrieve_knowledge`
-- 由 `ExecuteNode` 按计划生成讲解内容
-- 更适合讲题、解释概念、循序渐进教学
+默认知识库目录为 `KG/`，运行数据（记忆库与索引）由应用创建在 `data/` 下。RAG embedding 不可用时，检索会降级为空结果而不阻塞服务启动。
 
-### Companion / Parent 模式
+## 🧪 验证
 
-- 使用 `ReasonNode` 做多轮受控 ReAct 决策
-- 最多迭代 `3` 轮
-- 支持工具：
-  - `retrieve_knowledge`
-  - `tavily_search`
-  - `read_memory_bundle`
-- `parent` 模式额外启用：
-  - `generate_parent_summary`
-
-### 家长摘要技能
-
-当家长提出这类请求时，模型会优先调用内置技能：
-
-- “帮我总结一下孩子最近学了什么”
-- “看看小明最近学习情况”
-- “给我一份孩子近期进展摘要”
-
-该技能会从记忆库读取 `episodic / semantic` 信息，并生成面向家长的总结文本。
-
-## RAG 与 Memory 说明
-
-### RAG
-
-- 默认知识库目录：`KG/`
-- 支持文件类型：`.txt`、`.pdf`
-- 索引缓存目录：`app/rag/data/rag_index/`
-- 当前 RAG embedding 依赖环境变量 `RAG_embedding_model_key`
-- 如果 embedding 不可用，RAG 会降级为空结果，不阻塞主服务启动
-
-### Memory
-
-- 默认记忆数据库路径：`data/memory.sqlite3`
-- 默认索引目录：`data/memory_index/`
-- 每轮会自动写入：
-  - `working`
-  - `episodic`
-- 可选写入：
-  - `perceptual`
-- 启动时如果 `MEMORY_RESET_ON_START=true`，会清空现有记忆库
-
-如果你希望保留历史记忆，务必在 `.env` 中显式设置：
-
-```env
-MEMORY_RESET_ON_START=false
+```bash
+pytest -q
 ```
 
-## Support
+测试覆盖路由决策、Plan-and-Execute、ReAct 迭代与工具相关逻辑，不调用真实模型服务。
 
-如果这个项目对你有帮助，欢迎点一个 `Star` 支持一下。
+## 🗂️ 项目结构
+
+```text
+XiaoZhi-Agent/
+├── app/
+│   ├── agent/       # LangGraph 状态、节点与子图路由
+│   ├── api/         # FastAPI 路由与 SSE 接口
+│   ├── frontend/    # 内置 Playground
+│   ├── memory/      # 分层记忆系统
+│   ├── rag/         # 本地知识检索与索引
+│   ├── skills/      # 技能注册与家长摘要技能
+│   └── tools/       # RAG、搜索与记忆工具封装
+├── docs/            # 架构说明与演示素材
+├── KG/              # 本地知识库语料
+├── tests/           # pytest 测试
+└── .env.example     # 配置模板
+```
+
+## 🔐 安全提示
+
+不要提交真实 API Key 或记忆数据；`.env` 与运行时 `data/` 应保持在 Git 忽略范围内。

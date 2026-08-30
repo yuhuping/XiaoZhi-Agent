@@ -19,7 +19,7 @@ from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from app.agent.state import AgentState
+from app.agent.state import AgentState, emit_stream_event
 from app.core.config import Settings
 from app.core.langsmith import is_langsmith_enabled
 from app.prompts.plan_prompts import (
@@ -295,11 +295,23 @@ class ModelService:
         question = (chat_request.text or "").strip() or "No text provided."
         instruction = build_step_execute_instruction()
         history = ""
-        step_result = ""
+        rendered_steps: list[str] = []
 
         async with self._openai_call_semaphore:
             for i, step in enumerate(plan_steps, 1):
-                is_last = i == len(plan_steps)
+                public_step = " ".join(str(step).split())[:80]
+                await emit_stream_event(
+                    state,
+                    {
+                        "type": "workflow",
+                        "event": "step_started",
+                        "phase": "execution",
+                        "status": "active",
+                        "title": public_step,
+                        "step_index": i - 1,
+                        "step_count": len(plan_steps),
+                    },
+                )
                 prompt = build_step_execute_user_prompt(
                     question=question,
                     plan=plan_steps,
@@ -311,12 +323,34 @@ class ModelService:
                     prompt=prompt,
                     chat_request=chat_request,
                     tools=[calculate_tool],
-                    on_delta=on_delta if is_last else None,
+                    on_delta=None,
                 )
                 history += f"步骤{i}: {step}\n结果: {step_result}\n"
+                if len(plan_steps) == 1:
+                    rendered_step = step_result.strip()
+                else:
+                    rendered_step = f"第{i}步 · {public_step}\n{step_result.strip()}"
+                rendered_steps.append(rendered_step)
+                if on_delta and rendered_step:
+                    separator = "\n\n" if i < len(plan_steps) else ""
+                    emitted = on_delta(f"{rendered_step}{separator}")
+                    if inspect.isawaitable(emitted):
+                        await emitted
+                await emit_stream_event(
+                    state,
+                    {
+                        "type": "workflow",
+                        "event": "step_completed",
+                        "phase": "execution",
+                        "status": "completed",
+                        "title": public_step,
+                        "step_index": i - 1,
+                        "step_count": len(plan_steps),
+                    },
+                )
                 logger.info("[execute_plan] step=%d/%d result_preview=%r", i, len(plan_steps), step_result[:80])
 
-        return step_result.strip()
+        return "\n\n".join(rendered_steps).strip()
 
     async def _execute_step_with_tools(
         self,

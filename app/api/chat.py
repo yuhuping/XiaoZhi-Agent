@@ -30,15 +30,30 @@ async def _stream_chat_response(
 
     async def on_delta(delta: str) -> None:
         if delta:
-            await queue.put({"delta": delta})
+            await queue.put({"type": "delta", "delta": delta})
+
+    async def on_event(event: dict[str, object]) -> None:
+        await queue.put(event)
 
     async def produce() -> None:
         try:
-            await service.explain_and_ask_stream(request=request, on_delta=on_delta)
+            await service.explain_and_ask_stream(
+                request=request,
+                on_delta=on_delta,
+                on_event=on_event,
+            )
         except Exception:
             logger.exception("chat streaming failed")
+            await queue.put(
+                {
+                    "type": "error",
+                    "error": "请求处理失败，请稍后重试。",
+                    "success": False,
+                }
+            )
+        else:
+            await queue.put({"type": "done", "done": True, "success": True})
         finally:
-            await queue.put({"done": True})
             await queue.put(_STREAM_END)
 
     task = asyncio.create_task(produce())
