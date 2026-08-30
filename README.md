@@ -18,10 +18,10 @@
 </div>
 
 <p align="center">
-  <img src="docs/assets/xiaozhi-playground-demo.gif" alt="小智 Playground 中 Plan and Execute 规划、检索与逐步执行演示" width="100%" />
+  <img src="docs/assets/xiaozhi-playground-demo.gif" alt="小智 Playground 中数学题的 Plan and Execute 规划、计算与验算演示" width="100%" />
 </p>
 
-<p align="center"><sub>教育模式通过同一 SSE 协议实时展示 <code>Planning → Retrieval → Step 1/2/3 → Complete</code>；演示使用确定性本地载荷录制，不代表线上模型的实际回答。</sub></p>
+<p align="center"><sub>数学应用题通过同一 SSE 协议实时展示 <code>Planning → Step 1/2/3 → Verify → Complete</code>；演示使用确定性本地载荷录制，不代表线上模型的实际回答。</sub></p>
 
 ---
 
@@ -68,6 +68,8 @@ flowchart LR
 ```
 
 教育模式会在同一条响应流中依次发送 `planning_started`、`planning_completed`、`retrieval_*`、`step_started`、`step_completed` 与 `workflow_completed`。这些事件只包含可展示的步骤标签和状态，不暴露隐藏推理；每一步的真实结果都会累积进最终回答，而不是只保留最后一步。
+
+README 动图使用“18 块积木”应用题：先算 `18 - 6`，再算 `12 ÷ 3`，最后用 `4 × 3 + 6` 验算，让规划、执行顺序和最终结果在一个例子里完整闭环。
 
 <details>
   <summary><strong>查看完整架构图</strong></summary>

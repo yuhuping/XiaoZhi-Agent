@@ -19,7 +19,7 @@ class FakeStreamingService:
                 "title": "正在规划学习路线",
             }
         )
-        await on_delta("蜗牛的壳")
+        await on_delta("18 - 6 = 12")
 
 
 class FailingStreamingService:
@@ -41,7 +41,7 @@ def _decode_sse(raw_event: str) -> dict[str, Any]:
 
 
 def test_stream_preserves_workflow_delta_and_done_order() -> None:
-    request = ChatRequest(text="为什么蜗牛背着壳？", mode="education")
+    request = ChatRequest(text="18块积木用掉6块，再平均分给3个人。", mode="education")
 
     async def collect() -> list[dict[str, Any]]:
         events = []
@@ -53,13 +53,13 @@ def test_stream_preserves_workflow_delta_and_done_order() -> None:
 
     assert [event["type"] for event in events] == ["workflow", "delta", "done"]
     assert events[0]["phase"] == "planning"
-    assert events[1]["delta"] == "蜗牛的壳"
+    assert events[1]["delta"] == "18 - 6 = 12"
     assert events[2]["done"] is True
     assert events[2]["success"] is True
 
 
 def test_stream_failure_emits_error_without_false_done() -> None:
-    request = ChatRequest(text="为什么蜗牛背着壳？", mode="education")
+    request = ChatRequest(text="18块积木用掉6块，再平均分给3个人。", mode="education")
 
     async def collect() -> list[dict[str, Any]]:
         events = []
@@ -84,3 +84,4 @@ def test_playground_contains_plan_execute_learning_route() -> None:
     assert "Plan & Execute" in content
     assert "learning-route" in content
     assert "updateWorkflowUI" in content
+    assert "18块积木" in content
