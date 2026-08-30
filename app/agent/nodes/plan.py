@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from app.agent.state import AgentState, append_trace
+from app.agent.state import AgentState, append_trace, emit_stream_event
 from app.tools.basic_tools import BasicTools
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,16 @@ class PlanNode:
 
     async def __call__(self, state: AgentState) -> AgentState:
         logger.info("entering node=plan")
+        await emit_stream_event(
+            state,
+            {
+                "type": "workflow",
+                "event": "planning_started",
+                "phase": "planning",
+                "status": "active",
+                "title": "正在规划学习路线",
+            },
+        )
         plan = await self.tools.generate_plan(state)
         steps = plan.get("steps", ["直接回答用户问题"])
         if not steps:
@@ -43,6 +53,31 @@ class PlanNode:
             selected_act = "direct"
             selected_tool = None
             tool_input = {}
+
+        public_steps = [" ".join(str(step).split())[:80] for step in steps]
+        await emit_stream_event(
+            state,
+            {
+                "type": "workflow",
+                "event": "planning_completed",
+                "phase": "planning",
+                "status": "completed",
+                "title": "学习路线已生成",
+                "steps": public_steps,
+                "needs_retrieval": bool(needs_retrieval and retrieval_query),
+            },
+        )
+        if needs_retrieval and retrieval_query:
+            await emit_stream_event(
+                state,
+                {
+                    "type": "workflow",
+                    "event": "retrieval_started",
+                    "phase": "retrieval",
+                    "status": "active",
+                    "title": "正在检索相关知识",
+                },
+            )
 
         ai_message = AIMessage(
             content=f"Plan: {len(steps)} steps, retrieval={needs_retrieval}",

@@ -17,6 +17,10 @@
       --user-bubble: #fff1db;
       --assistant-bubble: #ffffff;
       --ok: #2c8d66;
+      --route-blue: #3d72c4;
+      --route-blue-soft: #eaf2ff;
+      --route-ink: #253752;
+      --route-gold: #e7a82d;
       --shadow: 0 18px 50px rgba(84, 58, 18, 0.12);
       --radius-xl: 26px;
       --radius-lg: 20px;
@@ -380,6 +384,233 @@
       background: var(--assistant-bubble);
     }
 
+    .assistant-message[hidden] {
+      display: none;
+    }
+
+    .learning-route {
+      width: 560px;
+      max-width: 100%;
+      margin: -3px -5px 13px;
+      padding: 16px;
+      color: var(--route-ink);
+      white-space: normal;
+      border: 1px solid rgba(61, 114, 196, 0.16);
+      border-radius: 17px;
+      background:
+        linear-gradient(rgba(61, 114, 196, 0.045) 1px, transparent 1px) 0 0 / 100% 27px,
+        linear-gradient(145deg, #fbfdff, #f4f8ff);
+      box-shadow: inset 4px 0 0 rgba(61, 114, 196, 0.74);
+      overflow: hidden;
+    }
+
+    .learning-route[hidden] {
+      display: none;
+    }
+
+    .route-header,
+    .route-progress-label,
+    .route-tool {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .route-kicker {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--route-blue);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .route-title {
+      display: block;
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+
+    .route-state {
+      flex: 0 0 auto;
+      padding: 5px 9px;
+      color: var(--route-blue);
+      font-size: 11px;
+      font-weight: 800;
+      border: 1px solid rgba(61, 114, 196, 0.15);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.8);
+    }
+
+    .learning-route.is-active .route-state::before {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin-right: 6px;
+      border-radius: 50%;
+      background: var(--route-gold);
+      box-shadow: 0 0 0 4px rgba(231, 168, 45, 0.13);
+      animation: route-pulse 1.2s ease-in-out infinite;
+    }
+
+    .learning-route.is-complete {
+      box-shadow: inset 4px 0 0 var(--ok);
+    }
+
+    .learning-route.is-complete .route-state {
+      color: var(--ok);
+      border-color: rgba(44, 141, 102, 0.18);
+      background: rgba(231, 248, 239, 0.86);
+    }
+
+    .learning-route.is-error {
+      box-shadow: inset 4px 0 0 #c65b52;
+    }
+
+    .learning-route.is-error .route-state {
+      color: #a8443c;
+      border-color: rgba(198, 91, 82, 0.2);
+      background: rgba(255, 238, 236, 0.9);
+    }
+
+    .route-tool {
+      margin: 14px 0 10px;
+      padding: 9px 11px;
+      justify-content: flex-start;
+      border: 1px dashed rgba(61, 114, 196, 0.24);
+      border-radius: 12px;
+      background: rgba(234, 242, 255, 0.68);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .route-tool[hidden] {
+      display: none;
+    }
+
+    .route-tool-icon {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 8px;
+      color: white;
+      background: var(--route-blue);
+      font-size: 12px;
+    }
+
+    .route-tool-status {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .route-tool[data-status="completed"] .route-tool-icon {
+      background: var(--ok);
+    }
+
+    .route-steps {
+      list-style: none;
+      margin: 13px 0 0;
+      padding: 0;
+      display: grid;
+    }
+
+    .route-step {
+      min-height: 42px;
+      display: grid;
+      grid-template-columns: 27px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      position: relative;
+      color: #778296;
+      font-size: 13px;
+      line-height: 1.45;
+      transition: color 180ms ease, transform 180ms ease;
+    }
+
+    .route-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 25px;
+      bottom: 0;
+      left: 12px;
+      width: 2px;
+      background: rgba(61, 114, 196, 0.15);
+    }
+
+    .route-marker {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      position: relative;
+      z-index: 1;
+      border: 1px solid rgba(61, 114, 196, 0.18);
+      border-radius: 9px;
+      background: #fff;
+      color: var(--route-blue);
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .route-step.is-active {
+      color: var(--route-ink);
+      font-weight: 700;
+      transform: translateX(2px);
+    }
+
+    .route-step.is-active .route-marker {
+      color: #fff;
+      border-color: var(--route-blue);
+      background: var(--route-blue);
+      box-shadow: 0 0 0 5px rgba(61, 114, 196, 0.1);
+    }
+
+    .route-step.is-complete {
+      color: #425066;
+    }
+
+    .route-step.is-complete .route-marker {
+      color: #fff;
+      border-color: var(--ok);
+      background: var(--ok);
+    }
+
+    .route-progress-label {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .route-progress-track {
+      height: 4px;
+      margin-top: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(61, 114, 196, 0.11);
+    }
+
+    .route-progress-bar {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--route-blue), var(--ok));
+      transition: width 320ms ease;
+    }
+
+    @keyframes route-pulse {
+      50% { transform: scale(0.72); opacity: 0.58; }
+    }
+
     .followup {
       margin-top: 10px;
       padding: 10px 11px;
@@ -487,6 +718,11 @@
         max-width: 100%;
       }
 
+      .learning-route {
+        margin-left: 0;
+        margin-right: 0;
+      }
+
       .chat-scroll,
       .chat-shell,
       .chat-topbar,
@@ -494,6 +730,17 @@
       .sidebar {
         padding-left: 12px;
         padding-right: 12px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .learning-route.is-active .route-state::before {
+        animation: none;
+      }
+
+      .route-step,
+      .route-progress-bar {
+        transition: none;
       }
     }
   </style>
@@ -523,7 +770,7 @@
           <label for="template-select">模板</label>
           <select id="template-select">
             <option value="">选择模板</option>
-            <option value="text-only">文本学习：苹果</option>
+            <option value="text-only">学习路线：蜗牛的壳</option>
             <option value="text-plus-image">图文理解：图片识别</option>
           </select>
         </div>
@@ -531,9 +778,9 @@
         <div class="field">
           <label for="mode-select">交互模式</label>
           <select id="mode-select">
-            <option value="education">教育模式</option>
+            <option value="education" selected>教育模式</option>
             <option value="companion">陪伴模式</option>
-            <option value="parent" selected>家长模式</option>
+            <option value="parent">家长模式</option>
           </select>
         </div>
 
@@ -908,8 +1155,74 @@
 
       const bubble = document.createElement("div");
       bubble.className = "bubble assistant";
+
+      const workflowCard = document.createElement("section");
+      workflowCard.className = "learning-route";
+      workflowCard.dataset.phase = "idle";
+      workflowCard.dataset.status = "pending";
+      workflowCard.hidden = true;
+
+      const routeHeader = document.createElement("div");
+      routeHeader.className = "route-header";
+      const routeHeading = document.createElement("div");
+      const routeKicker = document.createElement("span");
+      routeKicker.className = "route-kicker";
+      routeKicker.textContent = "Plan & Execute";
+      const routeTitle = document.createElement("strong");
+      routeTitle.className = "route-title";
+      routeTitle.textContent = "小智学习路线";
+      const routeState = document.createElement("span");
+      routeState.className = "route-state";
+      routeState.textContent = "准备中";
+      routeHeading.appendChild(routeKicker);
+      routeHeading.appendChild(routeTitle);
+      routeHeader.appendChild(routeHeading);
+      routeHeader.appendChild(routeState);
+
+      const routeTool = document.createElement("div");
+      routeTool.className = "route-tool";
+      routeTool.dataset.phase = "retrieval";
+      routeTool.dataset.status = "pending";
+      routeTool.hidden = true;
+      const routeToolIcon = document.createElement("span");
+      routeToolIcon.className = "route-tool-icon";
+      routeToolIcon.textContent = "⌕";
+      const routeToolText = document.createElement("span");
+      routeToolText.textContent = "知识库检索";
+      const routeToolStatus = document.createElement("span");
+      routeToolStatus.className = "route-tool-status";
+      routeToolStatus.textContent = "等待中";
+      routeTool.appendChild(routeToolIcon);
+      routeTool.appendChild(routeToolText);
+      routeTool.appendChild(routeToolStatus);
+
+      const routeSteps = document.createElement("ol");
+      routeSteps.className = "route-steps";
+      const routeProgressLabel = document.createElement("div");
+      routeProgressLabel.className = "route-progress-label";
+      const routeProgressText = document.createElement("span");
+      routeProgressText.textContent = "等待规划";
+      const routeProgressCount = document.createElement("span");
+      routeProgressCount.textContent = "0 / 0";
+      routeProgressLabel.appendChild(routeProgressText);
+      routeProgressLabel.appendChild(routeProgressCount);
+      const routeProgressTrack = document.createElement("div");
+      routeProgressTrack.className = "route-progress-track";
+      const routeProgressBar = document.createElement("div");
+      routeProgressBar.className = "route-progress-bar";
+      routeProgressTrack.appendChild(routeProgressBar);
+
+      workflowCard.appendChild(routeHeader);
+      workflowCard.appendChild(routeTool);
+      workflowCard.appendChild(routeSteps);
+      workflowCard.appendChild(routeProgressLabel);
+      workflowCard.appendChild(routeProgressTrack);
+
       const messageNode = document.createElement("div");
-      messageNode.textContent = initialMessage || "No message returned.";
+      messageNode.className = "assistant-message";
+      messageNode.textContent = initialMessage;
+      messageNode.hidden = !initialMessage;
+      bubble.appendChild(workflowCard);
       bubble.appendChild(messageNode);
 
       bubbleWrap.appendChild(label);
@@ -917,7 +1230,142 @@
       row.appendChild(avatar);
       row.appendChild(bubbleWrap);
       appendChatRow(row);
-      return { bubble, messageNode };
+      return {
+        bubble,
+        messageNode,
+        workflowCard,
+        routeState,
+        routeTool,
+        routeToolStatus,
+        routeSteps,
+        routeProgressText,
+        routeProgressCount,
+        routeProgressBar,
+      };
+    }
+
+    function renderRouteSteps(ui, steps) {
+      ui.routeSteps.replaceChildren();
+      steps.forEach((step, index) => {
+        const item = document.createElement("li");
+        item.className = "route-step";
+        item.dataset.phase = "execution";
+        item.dataset.stepIndex = String(index);
+        item.dataset.status = "pending";
+        const marker = document.createElement("span");
+        marker.className = "route-marker";
+        marker.textContent = String(index + 1).padStart(2, "0");
+        const title = document.createElement("span");
+        title.className = "route-step-title";
+        title.textContent = String(step);
+        item.appendChild(marker);
+        item.appendChild(title);
+        ui.routeSteps.appendChild(item);
+      });
+      updateRouteProgress(ui);
+    }
+
+    function updateRouteProgress(ui) {
+      const steps = [...ui.routeSteps.querySelectorAll(".route-step")];
+      const completed = steps.filter((step) => step.dataset.status === "completed").length;
+      const percent = steps.length ? (completed / steps.length) * 100 : 0;
+      ui.routeProgressCount.textContent = `${completed} / ${steps.length}`;
+      ui.routeProgressBar.style.width = `${percent}%`;
+    }
+
+    function setRouteStepStatus(ui, stepIndex, status) {
+      const step = ui.routeSteps.querySelector(`[data-step-index="${stepIndex}"]`);
+      if (!step) {
+        return;
+      }
+      step.dataset.status = status;
+      step.classList.toggle("is-active", status === "active");
+      step.classList.toggle("is-complete", status === "completed");
+      const marker = step.querySelector(".route-marker");
+      if (marker) {
+        marker.textContent = status === "completed" ? "✓" : String(stepIndex + 1).padStart(2, "0");
+      }
+      updateRouteProgress(ui);
+    }
+
+    function updateWorkflowUI(ui, event) {
+      if (!event || event.type !== "workflow") {
+        return;
+      }
+
+      const phase = String(event.phase || "unknown");
+      const status = String(event.status || "pending");
+      ui.workflowCard.hidden = false;
+      ui.workflowCard.dataset.phase = phase;
+      ui.workflowCard.dataset.status = status;
+      ui.workflowCard.dataset.event = String(event.event || "");
+      ui.workflowCard.classList.toggle("is-active", status === "active");
+
+      if (phase === "planning" && status === "active") {
+        ui.routeState.textContent = "规划中";
+        ui.routeProgressText.textContent = "正在拆解问题";
+        setStatus("规划中", "正在把问题拆成可执行的学习步骤。");
+      }
+
+      if (phase === "planning" && status === "completed") {
+        const steps = Array.isArray(event.steps) ? event.steps : [];
+        renderRouteSteps(ui, steps);
+        ui.routeState.textContent = `${steps.length} 个步骤`;
+        ui.routeProgressText.textContent = event.needs_retrieval ? "规划完成 · 需要检索" : "规划完成 · 开始执行";
+      }
+
+      if (phase === "retrieval") {
+        ui.routeTool.hidden = false;
+        ui.routeTool.dataset.status = status;
+        ui.routeTool.dataset.event = String(event.event || "");
+        ui.routeToolStatus.textContent = status === "completed"
+          ? `已找到 ${Number(event.result_count || 0)} 条参考`
+          : "检索中…";
+        ui.routeState.textContent = status === "completed" ? "执行中" : "检索中";
+        ui.routeProgressText.textContent = status === "completed" ? "知识已就绪" : "正在查找可靠知识";
+        if (status === "active") {
+          setStatus("检索中", "正在查找与这个问题相关的知识。");
+        }
+      }
+
+      if (phase === "execution") {
+        const stepIndex = Number(event.step_index);
+        setRouteStepStatus(ui, stepIndex, status);
+        const step = ui.routeSteps.querySelector(`[data-step-index="${stepIndex}"]`);
+        if (step) {
+          step.dataset.event = String(event.event || "");
+        }
+        ui.routeState.textContent = status === "completed" ? "步骤完成" : `执行 ${stepIndex + 1}/${Number(event.step_count || 0)}`;
+        ui.routeProgressText.textContent = status === "completed" ? "已完成当前步骤" : `正在执行：${String(event.title || "")}`;
+        if (status === "active") {
+          setStatus("执行中", `正在完成第 ${stepIndex + 1} 个学习步骤。`);
+        }
+      }
+
+      if (phase === "complete" && status === "completed") {
+        [...ui.routeSteps.querySelectorAll(".route-step")].forEach((_, index) => {
+          setRouteStepStatus(ui, index, "completed");
+        });
+        ui.workflowCard.classList.remove("is-active");
+        ui.workflowCard.classList.add("is-complete");
+        ui.routeState.textContent = "已完成";
+        ui.routeProgressText.textContent = "学习路线全部完成";
+        setStatus("生成回答", "学习路线已执行完成。");
+      }
+
+      elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
+    }
+
+    function markWorkflowError(ui, message) {
+      ui.workflowCard.hidden = false;
+      ui.workflowCard.dataset.status = "error";
+      ui.workflowCard.dataset.event = "workflow_error";
+      ui.workflowCard.classList.remove("is-active", "is-complete");
+      ui.workflowCard.classList.add("is-error");
+      ui.routeState.textContent = "已中断";
+      ui.routeProgressText.textContent = "执行失败 · 可以重新尝试";
+      ui.messageNode.hidden = false;
+      ui.messageNode.textContent += `${ui.messageNode.textContent ? "\n\n" : ""}请求中断：${message}`;
     }
 
     function appendAssistantMeta(bubble, data) {
@@ -943,6 +1391,7 @@
     }
 
     function appendAssistantDelta(ui, delta) {
+      ui.messageNode.hidden = false;
       ui.messageNode.textContent += delta;
       elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
     }
@@ -950,6 +1399,7 @@
     function finalizeAssistantStream(ui, streamedText) {
       const finalText = streamedText;
       ui.messageNode.textContent = finalText || "No message returned.";
+      ui.messageNode.hidden = false;
       elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
     }
 
@@ -969,6 +1419,7 @@
       }
 
       function enqueue(text) {
+        ui.messageNode.hidden = false;
         for (const char of text) {
           charQueue.push(char);
         }
@@ -1035,7 +1486,7 @@
       clearImageSelection(true);
 
       if (templateName === "text-only") {
-        elements.text.value = "Tell me about an apple in a simple way.";
+        elements.text.value = "为什么蜗牛要背着一个壳？请带我一步一步找到答案。";
         elements.modeSelect.value = "education";
         elements.ageHint.value = DEFAULT_AGE_HINT;
         syncProfileIdWithMode();
@@ -1069,6 +1520,7 @@
       elements.sendBtn.disabled = true;
       setStatus("思考中", "正在等待模型回复。");
       startWaitTimer();
+      let activeStreamUI = null;
 
       try {
         const response = await fetch(endpoint, {
@@ -1103,12 +1555,14 @@
         }
 
         const ui = createAssistantMessageUI("");
+        activeStreamUI = ui;
         ui.messageNode.textContent = "";
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let streamBuffer = "";
         let streamedText = "";
         let doneReceived = false;
+        let streamError = "";
         const charRenderer = createCharQueueRenderer(ui);
 
         while (true) {
@@ -1120,6 +1574,17 @@
           const parsed = parseSseEvents(streamBuffer);
           streamBuffer = parsed.remaining;
           for (const event of parsed.events) {
+            if (event.type === "workflow") {
+              if (event.event === "step_completed") {
+                await charRenderer.drain();
+              }
+              updateWorkflowUI(ui, event);
+              continue;
+            }
+            if (event.type === "error") {
+              streamError = String(event.error || "请求处理失败，请稍后重试。");
+              continue;
+            }
             if (event.done === true && !doneReceived) {
               doneReceived = true;
               continue;
@@ -1134,6 +1599,17 @@
         streamBuffer += decoder.decode();
         const tailParsed = parseSseEvents(`${streamBuffer}\n\n`);
         for (const event of tailParsed.events) {
+          if (event.type === "workflow") {
+            if (event.event === "step_completed") {
+              await charRenderer.drain();
+            }
+            updateWorkflowUI(ui, event);
+            continue;
+          }
+          if (event.type === "error") {
+            streamError = String(event.error || "请求处理失败，请稍后重试。");
+            continue;
+          }
           if (event.done === true && !doneReceived) {
             doneReceived = true;
             continue;
@@ -1142,6 +1618,11 @@
             streamedText += event.delta;
             charRenderer.enqueue(event.delta);
           }
+        }
+
+        if (streamError) {
+          await charRenderer.drain();
+          throw new Error(streamError);
         }
 
         if (!doneReceived) {
@@ -1154,11 +1635,15 @@
         setStatus("准备就绪", "可以继续输入下一条问题。");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        appendAssistantMessage({
-          message: `Network error: ${message}`,
-          follow_up_question: null,
-        });
-        setStatus("网络错误", message);
+        if (activeStreamUI) {
+          markWorkflowError(activeStreamUI, message);
+        } else {
+          appendAssistantMessage({
+            message: `请求失败：${message}`,
+            follow_up_question: null,
+          });
+        }
+        setStatus("请求失败", message);
       } finally {
         stopWaitTimer();
         isSubmitting = false;

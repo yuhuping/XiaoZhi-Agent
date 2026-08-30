@@ -11,11 +11,14 @@ def build_plan_instruction() -> str:
     # 每次 education 模式请求调用一次，生成解题步骤并决定是否需要 RAG 检索。
     return textwrap.dedent("""\
         You are XiaoZhi, an educational assistant for children ages 3-8.
-        Analyze the user's question and create an internal solving plan.
+        Analyze the user's question and create a concise learning route.
+        The step labels may be shown to the user as execution progress.
 
         Rules:
         - Maximum 5 steps. Simple questions need only 1-2 steps.
-        - Each step is a concise instruction for how to explain/solve this part.
+        - Each step is a concise, user-safe action label for how to explain/solve this part.
+        - Use observable actions such as observe, retrieve, compare, calculate, or summarize.
+        - Never include hidden reasoning, private analysis, confidence judgments, or chain-of-thought.
         - Retrieval policy — set needs_retrieval=true for ANY of these topics:
           * Animals or plants: body structure, behavior, habitat, classification, life cycle, diet
           * Nature science: why/how questions about natural phenomena, ecosystems, biology

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import inspect
 from typing import Any, Awaitable, Callable, Literal, TypedDict
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ DialogueStage = Literal[
 ConversationRole = Literal["user", "assistant"]
 ConfidenceLevel = Literal["high", "medium", "low"]
 StreamDeltaWriter = Callable[[str], Awaitable[None] | None]
+StreamEventWriter = Callable[[dict[str, Any]], Awaitable[None] | None]
 DEFAULT_CHILD_PROFILE_ID = "default_child"
 DEFAULT_PARENT_PROFILE_ID = "default_parent"
 # 按模式映射默认画像ID，避免家长模式写入儿童画像。
@@ -82,6 +84,7 @@ class AgentState(TypedDict, total=False):
     memory_consolidated_count: int
     memory_forgotten_count: int
     stream_delta_writer: StreamDeltaWriter | None
+    stream_event_writer: StreamEventWriter | None
     final_response: dict[str, Any]
     workflow_trace: list[str]
     messages: list[Any]
@@ -158,6 +161,7 @@ def build_initial_state(request: ChatRequest, session_id: str | None = None) -> 
         "memory_consolidated_count": 0,
         "memory_forgotten_count": 0,
         "stream_delta_writer": None,
+        "stream_event_writer": None,
         "final_response": {},
         "workflow_trace": [],
         "messages": [],
@@ -172,6 +176,16 @@ def build_initial_state(request: ChatRequest, session_id: str | None = None) -> 
 
 def append_trace(state: AgentState, node_name: str) -> list[str]:
     return [*state.get("workflow_trace", []), node_name]
+
+
+async def emit_stream_event(state: AgentState, event: dict[str, Any]) -> None:
+    """发送可公开的工作流阶段事件；不包含模型思考过程。"""
+    writer = state.get("stream_event_writer")
+    if writer is None:
+        return
+    emitted = writer(event)
+    if inspect.isawaitable(emitted):
+        await emitted
 
 
 def state_to_request(state: AgentState) -> ChatRequest:

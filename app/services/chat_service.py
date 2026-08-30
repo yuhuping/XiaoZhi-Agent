@@ -41,6 +41,7 @@ class ChatService:
         self,
         request: ChatRequest,
         on_delta: Callable[[str], Awaitable[None] | None] | None,
+        on_event: Callable[[dict[str, object]], Awaitable[None] | None] | None = None,
     ) -> ChatResponse:
         """执行一次对话请求，可选逐段回调。"""
         logger.info(
@@ -69,6 +70,7 @@ class ChatService:
             ) as run:
                 state = build_initial_state(request)
                 state["stream_delta_writer"] = on_delta
+                state["stream_event_writer"] = on_event
                 state["rag_enabled"] = settings.rag_enabled
                 final_state = await self.graph.run(state=state)
                 response = ChatResponse.model_validate(final_state["final_response"])

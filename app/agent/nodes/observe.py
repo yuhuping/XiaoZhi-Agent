@@ -6,7 +6,7 @@ from typing import Any
 
 from langchain_core.messages import ToolMessage
 
-from app.agent.state import AgentState
+from app.agent.state import AgentState, emit_stream_event
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,19 @@ class ObserveNode:
             updates["retrieved_chunks"] = chunks if isinstance(chunks, list) else []
             updates["tool_result"] = last_tool_payload
             updates["tool_success"] = bool(last_tool_payload.get("tool_success", False))
+            if state.get("interaction_mode") == "education":
+                await emit_stream_event(
+                    state,
+                    {
+                        "type": "workflow",
+                        "event": "retrieval_completed",
+                        "phase": "retrieval",
+                        "status": "completed",
+                        "title": "相关知识已就绪",
+                        "result_count": len(chunks) if isinstance(chunks, list) else 0,
+                        "success": updates["tool_success"],
+                    },
+                )
         elif selected_act == "tavily_search":
             chunks = last_tool_payload.get("results", [])
             summary = f"retrieved {len(chunks)} web results via {state.get('selected_tool') or 'tool'}"
